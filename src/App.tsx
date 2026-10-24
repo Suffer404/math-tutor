@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import katex from 'katex';
 import { QuestionPanel } from './components/QuestionPanel';
 import { Whiteboard } from './components/Whiteboard';
 import { HandwritingCheck, HandwritingResult } from './components/HandwritingCheck';
@@ -26,7 +27,7 @@ interface WeakTopic {
   attempts: number;
 }
 
-// SVG icons as components - accept color via style prop on parent or use currentColor
+// SVG icons
 const ErrorIcon: React.FC<{ size?: number; strokeWidth?: number }> = ({ size = 48, strokeWidth = 1.5 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="var(--error)" strokeWidth={strokeWidth}>
     <circle cx="12" cy="12" r="10"></circle>
@@ -91,6 +92,178 @@ const XIcon: React.FC<{ size?: number; strokeWidth?: number }> = ({ size = 12, s
     <line x1="6" y1="6" x2="18" y2="18"></line>
   </svg>
 );
+
+const ChevronLeftIcon: React.FC<{ size?: number; strokeWidth?: number }> = ({ size = 20, strokeWidth = 2 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="15 18 9 12 15 6"></polyline>
+  </svg>
+);
+
+const ChevronRightIcon: React.FC<{ size?: number; strokeWidth?: number }> = ({ size = 20, strokeWidth = 2 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="9 18 15 12 9 6"></polyline>
+  </svg>
+);
+
+const ChevronUpIcon: React.FC<{ size?: number; strokeWidth?: number }> = ({ size = 20, strokeWidth = 2 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="18 15 12 9 6 15"></polyline>
+  </svg>
+);
+
+const ChevronDownIcon: React.FC<{ size?: number; strokeWidth?: number }> = ({ size = 20, strokeWidth = 2 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="6 9 12 15 18 9"></polyline>
+  </svg>
+);
+
+const FullscreenIcon: React.FC<{ size?: number; strokeWidth?: number }> = ({ size = 20, strokeWidth = 2 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+    <path d="M8 3H5a2 2 0 0 0-2 2v3"></path>
+    <path d="M21 8V5a2 2 0 0 0-2-2h-3"></path>
+    <path d="M3 16v3a2 2 0 0 0 2 2h3"></path>
+    <path d="M16 21h3a2 2 0 0 0 2-2v-3"></path>
+  </svg>
+);
+
+const QuestionCard: React.FC<{ 
+  question: any; 
+  currentIndex: number; 
+  totalQuestions: number; 
+  onNext: () => void; 
+  onPrev: () => void;
+}> = ({ question, currentIndex, totalQuestions, onNext, onPrev }) => {
+  const [showHints, setShowHints] = useState(false);
+  const [hintIndex, setHintIndex] = useState(0);
+  const [showSolution, setShowSolution] = useState(false);
+
+  const renderMath = (latex: string) => {
+    try {
+      return { __html: katex.renderToString(latex, { throwOnError: false }) };
+    } catch {
+      return { __html: latex };
+    }
+  };
+
+  const getDifficultyClass = (difficulty: string): string => {
+    if (difficulty === 'easy') return 'badge--easy';
+    if (difficulty === 'medium') return 'badge--medium';
+    if (difficulty === 'hard') return 'badge--hard';
+    return 'badge--easy';
+  };
+
+  const showQuestionLatex = question.question_latex != null;
+  const showAnswerLatex = question.answer_latex != null;
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: '70px',
+      left: '50%',
+      transform: 'translateX(-50%)',
+      zIndex: 50,
+      width: 'min(90vw, 600px)',
+      background: 'var(--bg-primary)',
+      border: '1px solid var(--border-primary)',
+      borderRadius: 'var(--radius-lg)',
+      boxShadow: 'var(--shadow-lg)',
+      padding: '1rem',
+      pointerEvents: 'auto',
+      maxHeight: '80vh',
+      overflowY: 'auto',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
+        <div style={{ flex: 1 }}>
+          <p style={{ margin: '0 0 0.25rem', fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+            {question.topic}
+          </p>
+          <p style={{ margin: 0, fontWeight: 500, fontSize: '1rem', lineHeight: 1.4 }}>{question.question_text}</p>
+          {showQuestionLatex && (
+            <div className="latex-content" style={{ marginTop: '0.5rem', fontSize: '0.9rem' }}>
+              {question.question_latex}
+            </div>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: '0.25rem' }}>
+          <button 
+            className="btn btn--ghost"
+            onClick={onPrev}
+            disabled={currentIndex === 0}
+            title="Previous question"
+          >
+            <ChevronLeftIcon size={18} />
+          </button>
+          <span style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+            {currentIndex + 1} / {totalQuestions}
+          </span>
+          <button 
+            className="btn btn--ghost"
+            onClick={onNext}
+            disabled={currentIndex === SAMPLE_QUESTIONS.length - 1}
+            title="Next question"
+          >
+            <ChevronRightIcon size={18} />
+          </button>
+        </div>
+      </div>
+
+      <hr style={{ margin: '0.75rem 0', border: 'none', borderTop: '1px solid var(--border-secondary)' }} />
+
+      <div className="hints-section">
+        {!showHints ? (
+          <button className="btn" style={{ width: '100%' }} onClick={() => { setShowHints(true); setHintIndex(0); }}>
+            Show Hint
+          </button>
+        ) : (
+          <div>
+            <h4 style={{ margin: '0 0 0.5rem', fontSize: '0.875rem' }}>
+              Hints ({hintIndex + 1} / {question.hints.length})
+            </h4>
+            <p style={{ margin: '0 0 0.75rem', lineHeight: 1.6 }}>{question.hints[hintIndex]}</p>
+            {hintIndex < question.hints.length - 1 && (
+              <button
+                className="btn btn--secondary"
+                style={{ width: '100%' }}
+                onClick={() => setHintIndex(hintIndex + 1)}
+              >
+                Next Hint
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      <hr style={{ margin: '0.75rem 0', border: 'none', borderTop: '1px solid var(--border-secondary)' }} />
+
+      <div className="solution-section">
+        <button
+          className="btn btn--secondary"
+          style={{ width: '100%' }}
+          onClick={() => setShowSolution(!showSolution)}
+        >
+          {showSolution ? 'Hide Solution' : 'Show Solution'}
+        </button>
+
+        {showSolution && (
+          <div style={{ marginTop: '0.75rem' }}>
+            <h4 style={{ margin: '0 0 0.5rem', fontSize: '0.875rem' }}>Answer:</h4>
+            {showAnswerLatex && (
+              <div className="latex-content" dangerouslySetInnerHTML={renderMath(question.answer_latex)} />
+            )}
+            <h4 style={{ margin: '1rem 0 0.5rem', fontSize: '0.875rem' }}>Steps:</h4>
+            <ol style={{ paddingLeft: '1.25rem', margin: 0, lineHeight: 1.8 }}>
+              {question.solution_steps.map((step: string, idx: number) => (
+                <li key={idx} style={{ marginBottom: '0.375rem' }}>
+                  <span dangerouslySetInnerHTML={renderMath(step)} />
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 const Dashboard: React.FC = () => {
   const { showToast } = useToast();
@@ -318,6 +491,28 @@ const AppContent: React.FC = () => {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [viewMode, setViewMode] = useState<ViewMode>('practice');
   const [handwritingResult, setHandwritingResult] = useState<HandwritingResult | null>(null);
+  
+  // Floating panel states - persisted in localStorage
+  const [questionPanelOpen, setQuestionPanelOpen] = useState(() => {
+    const saved = localStorage.getItem('math-tutor-question-panel-open');
+    return saved !== null ? JSON.parse(saved) : true;
+  });
+  const [handwritingStripOpen, setHandwritingStripOpen] = useState(() => {
+    const saved = localStorage.getItem('math-tutor-handwriting-strip-open');
+    return saved !== null ? JSON.parse(saved) : viewMode === 'handwriting';
+  });
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  
+  // Refs for fullscreen
+  const boardRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    localStorage.setItem('math-tutor-question-panel-open', JSON.stringify(questionPanelOpen));
+  }, [questionPanelOpen]);
+
+  useEffect(() => {
+    localStorage.setItem('math-tutor-handwriting-strip-open', JSON.stringify(handwritingStripOpen));
+  }, [handwritingStripOpen]);
 
   const handleNext = useCallback(() => {
     setCurrentQuestionIndex((prev) => Math.min(prev + 1, SAMPLE_QUESTIONS.length - 1));
@@ -331,28 +526,137 @@ const AppContent: React.FC = () => {
     setHandwritingResult(result);
   }, []);
 
+  const toggleFullscreen = useCallback(() => {
+    if (!document.fullscreenElement && boardRef.current) {
+      boardRef.current.requestFullscreen().catch(() => {});
+      setIsFullscreen(true);
+    } else if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+      setIsFullscreen(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'f' || e.key === 'F') {
+        e.preventDefault();
+        toggleFullscreen();
+      }
+      if (e.key === 'Escape' && document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleFullscreen]);
+
   return (
-    <div className="app-container">
-      {/* Header */}
-      <header className="app-header">
+    <div className="app-container" style={{ position: 'relative', height: '100vh', width: '100vw' }}>
+      {/* Fullscreen base layer - Whiteboard */}
+      <div 
+        ref={boardRef}
+        className="whiteboard-area" 
+        style={{ 
+          position: 'fixed', 
+          inset: 0, 
+          zIndex: 0,
+          background: 'var(--bg-primary)',
+        }}
+      >
+        {viewMode === 'practice' && <Whiteboard />}
+        {viewMode === 'handwriting' && (
+          <HandwritingCheck
+            questionId={SAMPLE_QUESTIONS[currentQuestionIndex].id}
+            onCheckComplete={handleHandwritingComplete}
+          />
+        )}
+        {viewMode === 'dashboard' && <Dashboard />}
+      </div>
+
+      {/* Floating Question Card - Top center */}
+      {questionPanelOpen && viewMode !== 'dashboard' && (
+        <QuestionCard
+          question={SAMPLE_QUESTIONS[currentQuestionIndex]}
+          currentIndex={currentQuestionIndex}
+          totalQuestions={SAMPLE_QUESTIONS.length}
+          onNext={handleNext}
+          onPrev={handlePrev}
+        />
+      )}
+
+      {/* Floating Question Panel Toggle - Left side */}
+      <button
+        className={`btn ${questionPanelOpen ? 'btn--primary' : 'btn--ghost'}`}
+        onClick={() => setQuestionPanelOpen(!questionPanelOpen)}
+        style={{
+          position: 'fixed',
+          left: '12px',
+          top: 'calc(var(--header-height) + 12px)',
+          zIndex: 40,
+          borderRadius: 'var(--radius-md)',
+          boxShadow: 'var(--shadow-md)',
+          padding: '0.5rem',
+        }}
+        aria-label={questionPanelOpen ? 'Hide question panel' : 'Show question panel'}
+        title={questionPanelOpen ? 'Hide question (Q)' : 'Show question (Q)'}
+      >
+        <ChevronRightIcon size={20} />
+      </button>
+
+      {/* Floating Handwriting Strip Toggle - Bottom */}
+      {(viewMode === 'handwriting' || handwritingStripOpen) && (
+        <button
+          className={`btn ${handwritingStripOpen ? 'btn--primary' : 'btn--ghost'}`}
+          onClick={() => setHandwritingStripOpen(!handwritingStripOpen)}
+          style={{
+            position: 'fixed',
+            bottom: '12px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 40,
+            borderRadius: 'var(--radius-md)',
+            boxShadow: 'var(--shadow-md)',
+            padding: '0.5rem 1rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+          }}
+          aria-label={handwritingStripOpen ? 'Hide handwriting strip' : 'Show handwriting strip'}
+          title={handwritingStripOpen ? 'Hide handwriting strip' : 'Show handwriting strip'}
+        >
+          <PenIcon size={18} />
+          <span style={{ fontSize: '0.8125rem' }}>Handwriting</span>
+        </button>
+      )}
+
+      {/* Top Header Bar */}
+      <header className="app-header" style={{ zIndex: 30 }}>
         <div className="app-header__nav">
           <button 
             className={`btn ${viewMode === 'practice' ? 'btn--active' : 'btn--ghost'}`}
-            onClick={() => setViewMode('practice')}
+            onClick={() => { setViewMode('practice'); setHandwritingStripOpen(false); }}
           >
             <PenIcon />
             Practice
           </button>
           <button 
             className={`btn ${viewMode === 'handwriting' ? 'btn--active' : 'btn--ghost'}`}
-            onClick={() => setViewMode('handwriting')}
+            onClick={() => { setViewMode('handwriting'); setHandwritingStripOpen(true); }}
           >
             <PenIcon />
             Handwriting
           </button>
           <button 
             className={`btn ${viewMode === 'dashboard' ? 'btn--active' : 'btn--ghost'}`}
-            onClick={() => setViewMode('dashboard')}
+            onClick={() => { setViewMode('dashboard'); setHandwritingStripOpen(false); }}
           >
             <BarChartIcon />
             Dashboard
@@ -387,31 +691,70 @@ const AppContent: React.FC = () => {
           >
             {theme === 'light' ? <MoonIcon /> : <SunIcon />}
           </button>
+          
+          <button 
+            className="btn btn--ghost"
+            onClick={toggleFullscreen}
+            aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+            title={isFullscreen ? 'Exit fullscreen (F)' : 'Enter fullscreen (F)'}
+          >
+            <FullscreenIcon />
+          </button>
         </div>
       </header>
 
-      {/* Sidebar */}
-      <QuestionPanel
-        question={SAMPLE_QUESTIONS[currentQuestionIndex]}
-        currentIndex={currentQuestionIndex}
-        totalQuestions={SAMPLE_QUESTIONS.length}
-        onNext={handleNext}
-        onPrev={handlePrev}
-      />
-
-      {/* Main content area */}
-      <main className="app-main">
-        <div className="whiteboard-area">
-          {viewMode === 'practice' && <Whiteboard />}
-          {viewMode === 'handwriting' && (
-            <HandwritingCheck
-              questionId={SAMPLE_QUESTIONS[currentQuestionIndex].id}
-              onCheckComplete={handleHandwritingComplete}
-            />
-          )}
-          {viewMode === 'dashboard' && <Dashboard />}
+      {/* Floating Handwriting Analysis Strip - Bottom */}
+      {handwritingStripOpen && viewMode === 'handwriting' && (
+        <div style={{
+          position: 'fixed',
+          bottom: '0',
+          left: '0',
+          right: '0',
+          zIndex: 35,
+          background: 'var(--bg-secondary)',
+          borderTop: '1px solid var(--border-primary)',
+          boxShadow: '0 -4px 20px rgba(0,0,0,0.1)',
+          maxHeight: '40vh',
+          overflow: 'hidden',
+        }}>
+          <HandwritingCheck
+            questionId={SAMPLE_QUESTIONS[currentQuestionIndex].id}
+            onCheckComplete={handleHandwritingComplete}
+          />
         </div>
-      </main>
+      )}
+
+      {/* Fullscreen hint */}
+      {!isFullscreen && (
+        <div style={{
+          position: 'fixed',
+          bottom: '80px',
+          right: '12px',
+          zIndex: 20,
+          padding: '0.5rem 0.75rem',
+          background: 'var(--bg-secondary)',
+          border: '1px solid var(--border-primary)',
+          borderRadius: 'var(--radius-md)',
+          boxShadow: 'var(--shadow-md)',
+          fontSize: '0.75rem',
+          color: 'var(--text-secondary)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          opacity: 0.8,
+          animation: 'fadeIn 0.5s ease-out',
+        }}>
+          <kbd style={{ 
+            padding: '0.125rem 0.375rem', 
+            background: 'var(--bg-tertiary)', 
+            border: '1px solid var(--border-primary)', 
+            borderRadius: 'var(--radius-sm)',
+            fontFamily: 'monospace',
+            fontSize: '0.7rem',
+          }}>F</kbd>
+          <span>Fullscreen</span>
+        </div>
+      )}
     </div>
   );
 };

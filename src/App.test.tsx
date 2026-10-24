@@ -1,8 +1,25 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { App } from './App';
 import { SAMPLE_QUESTIONS } from './data/sampleQuestions';
+
+// Mock localStorage for test
+const localStorageMock = {
+  getItem: vi.fn((key) => {
+    if (key === 'math-tutor-question-panel-open') return 'true';
+    if (key === 'math-tutor-handwriting-strip-open') return 'false';
+    return null;
+  }),
+  setItem: vi.fn(),
+  removeItem: vi.fn(),
+  clear: vi.fn(),
+};
+
+Object.defineProperty(window, 'localStorage', {
+  value: localStorageMock,
+  writable: true,
+});
 
 // Mock Excalidraw since canvas/DOM rendering in jsdom might be tricky
 vi.mock('@excalidraw/excalidraw', () => ({
@@ -10,17 +27,23 @@ vi.mock('@excalidraw/excalidraw', () => ({
 }));
 
 describe('App & Question Navigation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('renders initial question and whiteboard', () => {
     render(<App />);
-    expect(screen.getByText('Calculus I')).toBeDefined();
+    // Question card now shows topic "Derivatives" instead of course "Calculus I"
+    expect(screen.getByText('Derivatives')).toBeDefined();
     expect(screen.getByText(SAMPLE_QUESTIONS[0].question_text)).toBeDefined();
     expect(screen.getByTestId('excalidraw-mock')).toBeDefined();
   });
 
-  it('navigates to next and previous questions', () => {
+  it('navigates to next and previous questions via floating card', () => {
     render(<App />);
-    const nextBtn = screen.getByText('Next');
-    const prevBtn = screen.getByText('Previous');
+    // Next/Previous buttons are now in the floating question card
+    const nextBtn = screen.getByTitle('Next question');
+    const prevBtn = screen.getByTitle('Previous question');
 
     expect(prevBtn).toBeDisabled();
 
@@ -32,8 +55,9 @@ describe('App & Question Navigation', () => {
     expect(screen.getByText(SAMPLE_QUESTIONS[0].question_text)).toBeDefined();
   });
 
-  it('shows hints when requested', () => {
+  it('shows hints when requested via floating question card', () => {
     render(<App />);
+    // The hint button is now in the floating question card
     const hintBtn = screen.getByText('Show Hint');
     fireEvent.click(hintBtn);
 
