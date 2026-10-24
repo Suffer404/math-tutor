@@ -3,6 +3,7 @@ import katex from 'katex';
 import { QuestionPanel } from './components/QuestionPanel';
 import { Whiteboard } from './components/Whiteboard';
 import { HandwritingCheck, HandwritingResult } from './components/HandwritingCheck';
+import { AddQuestionModal } from './components/AddQuestionModal';
 import { SAMPLE_QUESTIONS } from './data/sampleQuestions';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { ToastProvider, useToast } from './context/ToastContext';
@@ -123,6 +124,13 @@ const FullscreenIcon: React.FC<{ size?: number; strokeWidth?: number }> = ({ siz
     <path d="M21 8V5a2 2 0 0 0-2-2h-3"></path>
     <path d="M3 16v3a2 2 0 0 0 2 2h3"></path>
     <path d="M16 21h3a2 2 0 0 0 2-2v-3"></path>
+  </svg>
+);
+
+const PlusIcon: React.FC<{ size?: number; strokeWidth?: number }> = ({ size = 20, strokeWidth = 2 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+    <line x1="12" y1="5" x2="12" y2="19"></line>
+    <line x1="5" y1="12" x2="19" y2="12"></line>
   </svg>
 );
 
@@ -502,6 +510,7 @@ const AppContent: React.FC = () => {
     return saved !== null ? JSON.parse(saved) : viewMode === 'handwriting';
   });
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [addQuestionOpen, setAddQuestionOpen] = useState(false);
   
   // Refs for fullscreen
   const boardRef = useRef<HTMLDivElement>(null);
@@ -557,6 +566,14 @@ const AppContent: React.FC = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [toggleFullscreen]);
+
+  const handleAddQuestion = useCallback((newQuestion: any) => {
+    // Add the new question to the sample questions (for demo purposes)
+    // In a real app, this would be handled by the backend
+    setCurrentQuestionIndex(SAMPLE_QUESTIONS.length);
+    // Note: In a real app, you'd update a questions state or refetch from backend
+    // For now, we just show a toast
+  }, []);
 
   return (
     <div className="app-container" style={{ position: 'relative', height: '100vh', width: '100vw' }}>
@@ -699,6 +716,15 @@ const AppContent: React.FC = () => {
             title={isFullscreen ? 'Exit fullscreen (F)' : 'Enter fullscreen (F)'}
           >
             <FullscreenIcon />
+          </button>
+          
+          <button 
+            className="btn btn--primary"
+            onClick={() => setAddQuestionOpen(true)}
+            aria-label="Add Question"
+            title="Add Question"
+          >
+            <PlusIcon />
           </button>
         </div>
       </header>
