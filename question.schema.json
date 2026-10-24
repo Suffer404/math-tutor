@@ -1,0 +1,47 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Question",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "id",
+    "course",
+    "topic",
+    "difficulty",
+    "question_type",
+    "question_text",
+    "source",
+    "hints",
+    "answer_latex",
+    "solution_steps",
+    "verification_status"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["1.0"] },
+    "id": { "type": "string" },
+    "course": { "type": "string" },
+    "topic": { "type": "string" },
+    "difficulty": { "type": "string", "enum": ["easy", "medium", "hard"] },
+    "question_type": { "type": "string" },
+    "question_text": { "type": "string" },
+    "question_latex": { "type": "string" },
+    "source": {
+      "type": "object",
+      "required": ["filename"],
+      "properties": {
+        "filename": { "type": "string" },
+        "page": { "type": "integer" },
+        "section": { "type": "string" }
+      }
+    },
+    "hints": { "type": "array", "items": { "type": "string" } },
+    "answer_latex": { "type": "string" },
+    "solution_steps": { "type": "array", "items": { "type": "string" } },
+    "verification_status": {
+      "type": "string",
+      "enum": ["pending", "reviewed", "verified"]
+    },
+    "misconceptions": { "type": "array", "items": { "type": "string" } },
+    "tags": { "type": "array", "items": { "type": "string" } }
+  }
+}
