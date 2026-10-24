@@ -19,6 +19,7 @@ export interface UseWhiteboardOptions {
 
 export interface UseWhiteboardReturn {
   initialData: WhiteboardState | null;
+  liveElements: readonly ExcalidrawElement[];
   isLoaded: boolean;
   isSaving: boolean;
   saveError: Error | null;
@@ -45,6 +46,7 @@ export function useWhiteboard(options: UseWhiteboardOptions): UseWhiteboardRetur
   } = options;
 
   const [initialData, setInitialData] = useState<WhiteboardState | null>(null);
+  const [liveElements, setLiveElements] = useState<readonly ExcalidrawElement[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<Error | null>(null);
@@ -96,6 +98,13 @@ export function useWhiteboard(options: UseWhiteboardOptions): UseWhiteboardRetur
 
     loadState();
 
+    // Also update liveElements when initialData changes (e.g., after load)
+    useEffect(() => {
+      if (initialData) {
+        setLiveElements(initialData.elements);
+      }
+    }, [initialData]);
+
     return () => {
       cancelled = true;
       isMountedRef.current = false;
@@ -132,6 +141,9 @@ export function useWhiteboard(options: UseWhiteboardOptions): UseWhiteboardRetur
     appState: AppState,
     files: BinaryFiles
   ) => {
+    // Update live elements immediately for UI feedback
+    setLiveElements(elements);
+
     if (!autoSave) return;
 
     // Only persist essential appState properties to avoid bloating storage
@@ -162,6 +174,7 @@ export function useWhiteboard(options: UseWhiteboardOptions): UseWhiteboardRetur
 
     const emptyState: WhiteboardState = { elements: [] };
     setInitialData(emptyState);
+    setLiveElements([]);
     
     try {
       localStorage.removeItem(storageKey);
@@ -192,6 +205,7 @@ export function useWhiteboard(options: UseWhiteboardOptions): UseWhiteboardRetur
     };
 
     setInitialData(stateToSave);
+    setLiveElements(data.elements);
     
     if (autoSave) {
       try {
@@ -219,6 +233,7 @@ export function useWhiteboard(options: UseWhiteboardOptions): UseWhiteboardRetur
 
   return {
     initialData,
+    liveElements,
     isLoaded,
     isSaving,
     saveError,

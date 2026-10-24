@@ -37,6 +37,7 @@ export const HandwritingCheck: React.FC<HandwritingCheckProps> = ({
   
   const {
     initialData,
+    liveElements,
     isLoaded,
     handleChange,
     clearBoard,
@@ -52,7 +53,32 @@ export const HandwritingCheck: React.FC<HandwritingCheckProps> = ({
   const [showCorrectionDialog, setShowCorrectionDialog] = useState(false);
   const [correctionInput, setCorrectionInput] = useState('');
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [aiConfigured, setAiConfigured] = useState<boolean | null>(null);
+  const [showAiConfigSheet, setShowAiConfigSheet] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Check AI configuration on mount
+  useEffect(() => {
+    const checkAiConfig = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/health`);
+        if (response.ok) {
+          const data = await response.json();
+          setAiConfigured(data.ai_configured === true);
+          if (!data.ai_configured) {
+            setShowAiConfigSheet(true);
+          }
+        } else {
+          setAiConfigured(false);
+          setShowAiConfigSheet(true);
+        }
+      } catch {
+        setAiConfigured(false);
+        setShowAiConfigSheet(true);
+      }
+    };
+    checkAiConfig();
+  }, []);
 
   const handleClear = useCallback(() => {
     setShowClearConfirm(true);
@@ -83,6 +109,12 @@ export const HandwritingCheck: React.FC<HandwritingCheckProps> = ({
   }, []);
 
   const analyzeHandwriting = useCallback(async () => {
+    // Check AI configuration before analyzing
+    if (aiConfigured === false) {
+      setShowAiConfigSheet(true);
+      return;
+    }
+    
     setIsAnalyzing(true);
     
     try {
@@ -122,21 +154,30 @@ export const HandwritingCheck: React.FC<HandwritingCheckProps> = ({
       
     } catch (error) {
       console.error('Handwriting analysis error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      // Check if it's an AI configuration error
+      if (errorMessage.includes('AI_PROVIDER') || errorMessage.includes('API key') || errorMessage.includes('not configured')) {
+        setAiConfigured(false);
+        setShowAiConfigSheet(true);
+        return;
+      }
+      
       const errorResult: HandwritingResult = {
         recognized_steps: [],
-        uncertain_regions: [{ description: String(error) }],
+        uncertain_regions: [{ description: errorMessage }],
         first_error_step: null,
-        error_explanation: String(error),
+        error_explanation: errorMessage,
         hint: 'Could not analyze handwriting. Please type your steps manually.',
         confidence: 0,
         needs_user_confirmation: true
       };
       setAnalysisResult(errorResult);
-      showToast(`Analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+      showToast(`Analysis failed: ${errorMessage}`, 'error');
     } finally {
       setIsAnalyzing(false);
     }
-  }, [captureCanvas, questionId, showToast]);
+  }, [captureCanvas, questionId, showToast, aiConfigured]);
 
   const handleConfirmStep = useCallback(() => {
     if (currentStepIndex < recognizedSteps.length - 1) {
@@ -203,7 +244,7 @@ export const HandwritingCheck: React.FC<HandwritingCheckProps> = ({
         <button 
           className="btn btn--primary"
           onClick={analyzeHandwriting}
-          disabled={isAnalyzing || !initialData?.elements?.length}
+          disabled={isAnalyzing || !liveElements?.length}
           style={{ marginLeft: 'auto' }}
         >
           {isAnalyzing ? (
@@ -217,7 +258,7 @@ export const HandwritingCheck: React.FC<HandwritingCheckProps> = ({
         <button 
           className="btn btn--ghost"
           onClick={handleClear}
-          disabled={!initialData?.elements?.length}
+          disabled={!liveElements?.length}
           title="Clear whiteboard"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '0.375rem', verticalAlign: 'middle' }}>
@@ -366,6 +407,56 @@ export const HandwritingCheck: React.FC<HandwritingCheckProps> = ({
         cancelText="Keep Drawings"
         variant="danger"
       />
+
+      {/* AI Configuration Sheet */}
+      {showAiConfigSheet && (
+        <div className="dialog-overlay" onClick={() => setShowAiConfigSheet(false)} role="dialog" aria-modal="true" aria-labelledby="ai-config-title">
+          <div className="dialog" style={{ maxWidth: '500px' }} onClick={e => e.stopPropagation()}>
+            <h2 id="ai-config-title" style={{ margin: '0 0 1rem', fontSize: '1.125rem' }}>AI Not Configured</h2>
+            <p style={{ margin: '0 0 1rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+              Handwriting analysis requires an AI provider. The current provider is <strong>mock</strong> (offline fallback).
+            </p>
+            <p style={{ margin: '0 0 1rem', color: 'var(--text-secondary)', lineHeight: 1.5, fontSize: '0.875rem' }}>
+              To enable real handwriting analysis, set one of these environment variables and restart the backend:
+            </p>
+            <ul style={{ margin: '0 0 1.5rem', paddingLeft: '1.5rem', color: 'var(--text-secondary)', fontSize: '0.875rem', lineHeight: 1.8 }}>
+              <li><code>AI_PROVIDER=openai</code> + <code>OPENAI_API_KEY=sk-...</code></li>
+              <li><code>AI_PROVIDER=anthropic</code> + <code>ANTHROPIC_API_KEY=sk-ant-...</code></li>
+            </ul>
+            <div style={{ padding: '0.75rem', background: 'var(--info-bg)', borderRadius: 'var(--radius-md)', marginBottom: '1rem', fontSize: '0.8125rem' }}>
+              <strong>SymPy-only fallback:</strong> You can still use the mock provider for basic structure analysis (recognizes steps, detects empty canvas). The mock returns simulated step recognition for testing.
+            </div>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+              <button 
+                className="btn btn--ghost"
+                onClick={() => setShowAiConfigSheet(false)}
+              >
+                Continue with Mock
+              </button>
+              <button 
+                className="btn btn--primary"
+                onClick={async () => {
+                  try {
+                    const response = await fetch(`${API_BASE}/ai/handwriting-check`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ image_base64: 'test', question_id: 'test' })
+                    });
+                    const data = await response.json();
+                    if (data.recognized_steps?.length > 0) {
+                      showToast('Mock provider is working!', 'success');
+                    }
+                  } catch {
+                    showToast('Failed to test connection', 'error');
+                  }
+                }}
+              >
+                Test Connection
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
