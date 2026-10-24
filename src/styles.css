@@ -168,6 +168,21 @@ body, html, #root {
   position: relative;
 }
 
+/* Excalidraw canvas - fill container completely */
+.whiteboard-container :global(.excalidraw) {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.whiteboard-container :global(.excalidraw .App) {
+  height: 100% !important;
+}
+
+.whiteboard-container :global(.excalidraw .excalidraw-interactive-canvas) {
+  height: 100% !important;
+  width: 100% !important;
+}
+
 /* Buttons */
 .btn {
   padding: 0.5rem 1rem;
