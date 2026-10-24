@@ -105,9 +105,11 @@ async def health_check():
         model = "gpt-4o-mini"
     elif provider_type == "anthropic":
         model = "claude-3-haiku-20240307"
+    elif provider_type == "requesty":
+        model = "openai/gpt-4o-mini"
     return {
         "status": "ok",
-        "ai_configured": provider_type != "mock" and bool(os.getenv("OPENAI_API_KEY") or os.getenv("ANTHROPIC_API_KEY")),
+        "ai_configured": provider_type != "mock" and bool(os.getenv("OPENAI_API_KEY") or os.getenv("ANTHROPIC_API_KEY") or os.getenv("REQUESTY_API_KEY")),
         "provider": provider_type,
         "model": model,
     }

@@ -225,6 +225,132 @@ class OpenAIProvider(AIProvider):
         except Exception as e:
             return AIResponse(content="", model="gpt-4o-mini", tokens_used=0, error=str(e))
 
+class RequestyProvider(AIProvider):
+    """Requesty AI Router provider (OpenAI-compatible API)."""
+    
+    def __init__(self, api_key: str, model: str = "openai/gpt-4o-mini"):
+        self.api_key = api_key
+        self.model = model
+        self.client = httpx.AsyncClient(
+            base_url="https://router.requesty.ai/v1",
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=60.0
+        )
+    
+    def _cache_key(self, prompt: str, image_base64: Optional[str] = None) -> str:
+        content = prompt + (image_base64 or "")
+        return hashlib.sha256(content.encode()).hexdigest()[:16]
+    
+    def _get_cached(self, cache_key: str) -> Optional[AIResponse]:
+        cache_file = CACHE_DIR / f"{cache_key}.json"
+        if cache_file.exists():
+            try:
+                data = json.loads(cache_file.read_text())
+                if time.time() - data.get("timestamp", 0) < 86400 * 7:  # 1 week
+                    data["cached"] = True
+                    return AIResponse(**data)
+            except:
+                pass
+        return None
+    
+    def _save_cache(self, cache_key: str, response: AIResponse):
+        cache_file = CACHE_DIR / f"{cache_key}.json"
+        data = {
+            "content": response.content,
+            "model": response.model,
+            "tokens_used": response.tokens_used,
+            "cached": False,
+            "error": response.error,
+            "timestamp": time.time()
+        }
+        cache_file.write_text(json.dumps(data))
+    
+    async def generate_text(self, prompt: str, system_prompt: Optional[str] = None) -> AIResponse:
+        cache_key = self._cache_key(prompt)
+        cached = self._get_cached(cache_key)
+        if cached:
+            return cached
+            
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+        
+        try:
+            response = await self.client.post("/chat/completions", json={
+                "model": self.model,
+                "messages": messages,
+                "temperature": 0.3,
+                "max_tokens": 2000
+            })
+            
+            if response.status_code == 429:
+                return AIResponse(
+                    content="",
+                    model=self.model,
+                    tokens_used=0,
+                    error="Rate limit exceeded. Please wait."
+                )
+            if response.status_code == 401:
+                return AIResponse(
+                    content="",
+                    model=self.model,
+                    tokens_used=0,
+                    error="Invalid API key."
+                )
+            
+            response.raise_for_status()
+            data = response.json()
+            
+            ai_response = AIResponse(
+                content=data["choices"][0]["message"]["content"],
+                model=self.model,
+                tokens_used=data.get("usage", {}).get("total_tokens", 0)
+            )
+            self._save_cache(cache_key, ai_response)
+            return ai_response
+            
+        except httpx.TimeoutException:
+            return AIResponse(content="", model=self.model, tokens_used=0, error="Request timeout")
+        except Exception as e:
+            return AIResponse(content="", model=self.model, tokens_used=0, error=str(e))
+    
+    async def generate_vision(self, prompt: str, image_base64: str) -> AIResponse:
+        cache_key = self._cache_key(prompt, image_base64)
+        cached = self._get_cached(cache_key)
+        if cached:
+            return cached
+            
+        try:
+            response = await self.client.post("/chat/completions", json={
+                "model": "openai/gpt-4o-mini",
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_base64}"}}
+                    ]
+                }],
+                "temperature": 0.2,
+                "max_tokens": 1500
+            })
+            
+            if response.status_code == 429:
+                return AIResponse(content="", model="openai/gpt-4o-mini", tokens_used=0, error="Rate limit exceeded")
+            response.raise_for_status()
+            
+            data = response.json()
+            ai_response = AIResponse(
+                content=data["choices"][0]["message"]["content"],
+                model="openai/gpt-4o-mini",
+                tokens_used=data.get("usage", {}).get("total_tokens", 0)
+            )
+            self._save_cache(cache_key, ai_response)
+            return ai_response
+            
+        except Exception as e:
+            return AIResponse(content="", model="openai/gpt-4o-mini", tokens_used=0, error=str(e))
+
 class AnthropicProvider(AIProvider):
     """Anthropic Claude API provider."""
     
@@ -306,6 +432,12 @@ def get_provider() -> AIProvider:
             print("Warning: ANTHROPIC_API_KEY not set, falling back to mock")
             return MockProvider()
         return AnthropicProvider(api_key)
+    elif provider_type == "requesty":
+        api_key = os.getenv("REQUESTY_API_KEY")
+        if not api_key:
+            print("Warning: REQUESTY_API_KEY not set, falling back to mock")
+            return MockProvider()
+        return RequestyProvider(api_key)
     else:
         return MockProvider()
 
