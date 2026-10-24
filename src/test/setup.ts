@@ -1,9 +1,10 @@
 import '@testing-library/jest-dom';
 import { vi, beforeAll, afterAll } from 'vitest';
+import React from 'react';
 
 // Mock localStorage
 const localStorageMock = {
-  getItem: vi.fn(),
+  getItem: vi.fn(() => null),
   setItem: vi.fn(),
   removeItem: vi.fn(),
   clear: vi.fn(),
@@ -34,6 +35,30 @@ HTMLCanvasElement.prototype.toDataURL = vi.fn(() => 'data:image/png;base64,mock'
 
 // Mock fetch for API calls
 global.fetch = vi.fn();
+
+// Mock useWhiteboard hook to avoid hook issues in tests
+vi.mock('../hooks/useWhiteboard', () => ({
+  useWhiteboard: () => ({
+    initialData: { elements: [] },
+    liveElements: [],
+    isLoaded: true,
+    isSaving: false,
+    saveError: null,
+    loadError: null,
+    handleChange: vi.fn(),
+    clearBoard: vi.fn(),
+    exportData: vi.fn(() => ({ elements: [] })),
+    importData: vi.fn(),
+    setInitialData: vi.fn(),
+  }),
+}));
+
+// Mock Excalidraw to avoid hook issues in tests
+vi.mock('@excalidraw/excalidraw', () => ({
+  Excalidraw: vi.fn(({ onChange, initialData, UIOptions, children, ...props }) => 
+    React.createElement('div', { 'data-testid': 'excalidraw-mock', ...props }, children)
+  ),
+}));
 
 // Suppress specific console errors in tests
 const originalError = console.error;

@@ -72,3 +72,16 @@ def test_attempts():
     response = client.get("/attempts/q_calc_001")
     assert len(response.json()) == 1
     assert response.json()[0]["id"] == attempt_id
+
+def test_health_endpoint():
+    response = client.get("/health")
+    assert response.status_code == 200
+    data = response.json()
+    assert "status" in data
+    assert data["status"] == "ok"
+    assert "ai_configured" in data
+    assert "provider" in data
+    assert "model" in data
+    assert isinstance(data["ai_configured"], bool)
+    assert isinstance(data["provider"], str)
+    assert isinstance(data["model"], str)

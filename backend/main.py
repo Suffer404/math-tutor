@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional
 import json
 import uuid
+import os
 from .database import get_db, init_db
 from .schemas import QuestionSchema, AttemptCreate
 import aiosqlite
@@ -93,6 +94,23 @@ async def list_questions(
         q["tags"] = json.loads(q.pop("tags_json")) if q.get("tags_json") else None
         questions.append(q)
     return questions
+
+@app.get("/health")
+async def health_check():
+    from .ai_provider import get_provider
+    provider = get_provider()
+    provider_type = os.getenv("AI_PROVIDER", "mock").lower()
+    model = "mock"
+    if provider_type == "openai":
+        model = "gpt-4o-mini"
+    elif provider_type == "anthropic":
+        model = "claude-3-haiku-20240307"
+    return {
+        "status": "ok",
+        "ai_configured": provider_type != "mock" and bool(os.getenv("OPENAI_API_KEY") or os.getenv("ANTHROPIC_API_KEY")),
+        "provider": provider_type,
+        "model": model,
+    }
 
 @app.post("/attempts")
 async def create_attempt(attempt: AttemptCreate, db: aiosqlite.Connection = Depends(get_db)):

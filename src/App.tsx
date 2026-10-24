@@ -5,6 +5,7 @@ import { HandwritingCheck, HandwritingResult } from './components/HandwritingChe
 import { SAMPLE_QUESTIONS } from './data/sampleQuestions';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { ToastProvider, useToast } from './context/ToastContext';
+import { useHealth } from './hooks/useHealth';
 import './styles.css';
 
 type ViewMode = 'practice' | 'handwriting' | 'dashboard';
@@ -313,6 +314,7 @@ const Dashboard: React.FC = () => {
 
 const AppContent: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
+  const { health, loading: healthLoading } = useHealth();
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [viewMode, setViewMode] = useState<ViewMode>('practice');
   const [handwritingResult, setHandwritingResult] = useState<HandwritingResult | null>(null);
@@ -358,6 +360,25 @@ const AppContent: React.FC = () => {
         </div>
         
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          {/* AI Status Badge */}
+          {!healthLoading && health && (
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.375rem',
+              padding: '0.25rem 0.5rem',
+              borderRadius: 'var(--radius-sm)',
+              fontSize: '0.75rem',
+              fontWeight: 500,
+              background: health.ai_configured ? 'var(--success-bg)' : 'var(--warning-bg)',
+              color: health.ai_configured ? 'var(--success)' : 'var(--warning)',
+              border: `1px solid ${health.ai_configured ? 'var(--success)' : 'var(--warning)'}`,
+            }}>
+              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'currentColor' }} />
+              {health.ai_configured ? `AI: ${health.provider} (${health.model})` : 'AI: Mock (offline)'}
+            </span>
+          )}
+          
           <button 
             className="btn btn--ghost"
             onClick={toggleTheme}
