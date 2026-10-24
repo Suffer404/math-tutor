@@ -168,7 +168,7 @@ const QuestionCard: React.FC<{
       borderRadius: 'var(--radius-lg)',
       boxShadow: 'var(--shadow-lg)',
       padding: '1rem',
-      pointerEvents: 'auto',
+      pointerEvents: 'none',
       maxHeight: '80vh',
       overflowY: 'auto',
     }}>
@@ -184,7 +184,7 @@ const QuestionCard: React.FC<{
             </div>
           )}
         </div>
-        <div style={{ display: 'flex', gap: '0.25rem' }}>
+        <div style={{ display: 'flex', gap: '0.25rem', pointerEvents: 'auto' }}>
           <button 
             className="btn btn--ghost"
             onClick={onPrev}
@@ -209,7 +209,7 @@ const QuestionCard: React.FC<{
 
       <hr style={{ margin: '0.75rem 0', border: 'none', borderTop: '1px solid var(--border-secondary)' }} />
 
-      <div className="hints-section">
+      <div className="hints-section" style={{ pointerEvents: 'auto' }}>
         {!showHints ? (
           <button className="btn" style={{ width: '100%' }} onClick={() => { setShowHints(true); setHintIndex(0); }}>
             Show Hint
@@ -235,7 +235,7 @@ const QuestionCard: React.FC<{
 
       <hr style={{ margin: '0.75rem 0', border: 'none', borderTop: '1px solid var(--border-secondary)' }} />
 
-      <div className="solution-section">
+      <div className="solution-section" style={{ pointerEvents: 'auto' }}>
         <button
           className="btn btn--secondary"
           style={{ width: '100%' }}
