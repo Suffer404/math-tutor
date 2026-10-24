@@ -4,6 +4,18 @@ from typing import List, Optional
 import json
 import uuid
 import os
+from pathlib import Path
+
+# Load .env file if it exists
+try:
+    from dotenv import load_dotenv
+    # Look for .env in project root (parent of backend/)
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
+except ImportError:
+    pass
+
 from .database import get_db, init_db
 from .schemas import QuestionSchema, AttemptCreate
 import aiosqlite
