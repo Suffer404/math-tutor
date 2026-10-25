@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { ExcalidrawElement } from '@excalidraw/excalidraw/types/element/types';
 import { AppState, BinaryFiles } from '@excalidraw/excalidraw/types/types';
+import { normalizeZoom, type ViewportTransform } from '../lib/sceneCoords';
 
 export interface WhiteboardState {
   elements: readonly ExcalidrawElement[];
@@ -20,6 +21,8 @@ export interface UseWhiteboardOptions {
 export interface UseWhiteboardReturn {
   initialData: WhiteboardState | null;
   liveElements: readonly ExcalidrawElement[];
+  /** Live pan/zoom, used only to place the feedback overlay. */
+  liveViewport: ViewportTransform;
   isLoaded: boolean;
   isSaving: boolean;
   saveError: Error | null;
@@ -54,6 +57,13 @@ export function useWhiteboard(options: UseWhiteboardOptions): UseWhiteboardRetur
 
   const [initialData, setInitialData] = useState<WhiteboardState | null>(null);
   const [liveElements, setLiveElements] = useState<readonly ExcalidrawElement[]>([]);
+  const [liveViewport, setLiveViewport] = useState<ViewportTransform>({
+    zoom: 1,
+    scrollX: 0,
+    scrollY: 0,
+    offsetLeft: 0,
+    offsetTop: 0,
+  });
   const [isLoaded, setIsLoaded] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<Error | null>(null);
@@ -152,6 +162,13 @@ export function useWhiteboard(options: UseWhiteboardOptions): UseWhiteboardRetur
   ) => {
     // Update live elements immediately for UI feedback
     setLiveElements(elements);
+    setLiveViewport({
+      zoom: normalizeZoom(appState.zoom),
+      scrollX: appState.scrollX ?? 0,
+      scrollY: appState.scrollY ?? 0,
+      offsetLeft: appState.offsetLeft ?? 0,
+      offsetTop: appState.offsetTop ?? 0,
+    });
 
     if (!autoSave) return;
 
@@ -242,6 +259,7 @@ export function useWhiteboard(options: UseWhiteboardOptions): UseWhiteboardRetur
   return {
     initialData,
     liveElements,
+    liveViewport,
     isLoaded,
     isSaving,
     saveError,

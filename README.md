@@ -8,6 +8,7 @@ A Windows desktop application for practicing university calculus and engineering
 - **Question Bank**: SQLite-backed question storage with import/export, filtering, and attempt tracking
 - **Mathematical Verification**: SymPy-powered differentiation, integration, limits, solving, and equivalence checking
 - **AI Assistance** (Optional): Configurable AI provider for question generation and handwriting analysis
+- **Live Math-Error Detection**: after a pause (or an explicit check), reads handwritten steps, verifies them with SymPy and marks the first mistake with a red laser overlay that never edits the drawing or undo history
 - **Progressive Hints**: 3-level hint escalation (concept → rule → next operation)
 - **Dashboard**: Weak topic analysis, error log, bookmarks, revision queue
 - **Offline-First**: Core features work without internet; AI features are optional
@@ -81,9 +82,13 @@ Copy `.env.example` to `.env` and configure:
 
 ```env
 # AI Provider (optional - uses mock if not set)
-AI_PROVIDER=mock          # mock, openai, anthropic
+AI_PROVIDER=mock          # mock, openai, anthropic, requesty, custom
 OPENAI_API_KEY=           # If using OpenAI
 ANTHROPIC_API_KEY=        # If using Anthropic
+REQUESTY_API_KEY=         # If using Requesty / OpenRouter / Ollama
+REQUESTY_MODEL=           # text model
+REQUESTY_VISION_MODEL=    # optional image-capable model for live check
+# AI_VISION_MODEL=        # generic vision-model override
 
 # Database
 MATH_TUTOR_DB_PATH=math_tutor.db
@@ -109,8 +114,8 @@ npm.cmd run build
 # Frontend tests
 npm.cmd run test
 
-# Backend tests
-python -m pytest backend/test_backend.py backend/test_sympy.py backend/test_ai_provider.py -v
+# Backend tests (includes mocked live-check tests)
+python -m pytest backend -q
 ```
 
 ## Architecture Overview
@@ -125,9 +130,11 @@ python -m pytest backend/test_backend.py backend/test_sympy.py backend/test_ai_p
 
 - Backend binds to 127.0.0.1 only (no network exposure)
 - No telemetry or data collection
-- AI features require explicit user action and consent
-- All data stored locally in SQLite
+- AI features require explicit user action and consent; automatic live checks are opt-in and upload only after the pen pauses
+- Live-check hints never reveal the final answer automatically
+- All data stored locally in SQLite; board images are not persisted by the backend
 - No eval/exec of user input - whitelist parser only
+- See [docs/live-check.md](docs/live-check.md) for the live checker, vision-model setup and free/local options
 
 ## License
 

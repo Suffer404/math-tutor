@@ -1,11 +1,26 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useRef } from 'react';
 import { Excalidraw } from '@excalidraw/excalidraw';
 import { useWhiteboard } from '../hooks/useWhiteboard';
 import { ConfirmDialog } from './ConfirmDialog';
+import { LiveMathOverlay } from './LiveMathOverlay';
 
-export const Whiteboard: React.FC = () => {
+export interface WhiteboardProps {
+  questionId?: string;
+  questionText?: string;
+  aiConfigured?: boolean | null;
+  providerLabel?: string;
+}
+
+export const Whiteboard: React.FC<WhiteboardProps> = ({
+  questionId = 'practice',
+  questionText,
+  aiConfigured = null,
+  providerLabel,
+}) => {
   const {
     initialData,
+    liveElements,
+    liveViewport,
     isLoaded,
     isSaving,
     saveError,
@@ -17,6 +32,7 @@ export const Whiteboard: React.FC = () => {
   });
 
   const [showClearConfirm, setShowClearConfirm] = React.useState(false);
+  const boardContainerRef = useRef<HTMLDivElement>(null);
 
   const handleClear = useCallback(() => {
     setShowClearConfirm(true);
@@ -37,7 +53,11 @@ export const Whiteboard: React.FC = () => {
 
   return (
     <div className="whiteboard-area">
-      <div className="whiteboard-container" style={{ height: '100%', width: '100%' }}>
+      <div
+        ref={boardContainerRef}
+        className="whiteboard-container"
+        style={{ height: '100%', width: '100%' }}
+      >
         <Excalidraw
           initialData={initialData || { elements: [] }}
           onChange={handleChange}
@@ -49,6 +69,15 @@ export const Whiteboard: React.FC = () => {
               loadScene: true,
             },
           }}
+        />
+        <LiveMathOverlay
+          elements={liveElements}
+          view={liveViewport}
+          containerRef={boardContainerRef}
+          questionId={questionId}
+          questionText={questionText}
+          aiConfigured={aiConfigured}
+          providerLabel={providerLabel}
         />
         {/* Floating clear button */}
         <button

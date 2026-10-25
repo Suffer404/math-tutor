@@ -25,10 +25,21 @@ from .sympy_service import (
     verify_step, SymPyVerificationError
 )
 from .ai_provider import get_provider, SyncAIProvider, AIResponse
+from .handwriting_service import (
+    FeedbackCache,
+    LiveCheckInputError,
+    build_feedback,
+    build_prompt,
+    clean_image_base64,
+    error_feedback,
+    make_cache_key,
+    parse_ai_json,
+)
 from sympy import symbols
 import sympy as sp
 from pydantic import BaseModel
 from typing import Union, Optional
+import asyncio
 
 app = FastAPI(title="Math Tutor Backend")
 
@@ -109,28 +120,26 @@ async def list_questions(
 
 @app.get("/health")
 async def health_check():
-    from .ai_provider import get_provider
+    from .ai_provider import get_provider, load_ai_config, MockProvider
+
     provider = get_provider()
-    provider_type = os.getenv("AI_PROVIDER", "mock").lower()
+    configured = not isinstance(provider, MockProvider)
+    cfg = load_ai_config()
+    provider_type = str(cfg.get("provider") or os.getenv("AI_PROVIDER", "mock")).lower()
+    model = str(getattr(provider, "model", "mock") or "mock") if configured else "mock"
+    vision_model = (
+        str(getattr(provider, "vision_model", model) or model) if configured else "mock"
+    )
 
-    # which env var owns the key for each provider
-    key_vars = {
-        "openai": "OPENAI_API_KEY",
-        "anthropic": "ANTHROPIC_API_KEY",
-        "requesty": "REQUESTY_API_KEY",
-    }
-    models = {
-        "openai": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-        "anthropic": os.getenv("ANTHROPIC_MODEL", "claude-3-haiku-20240307"),
-        "requesty": os.getenv("REQUESTY_MODEL", "openai/gpt-4o-mini"),
-    }
-
-    key_var = key_vars.get(provider_type)
     return {
         "status": "ok",
-        "ai_configured": bool(key_var and os.getenv(key_var)),
+        # Reflects the provider actually built (env *or* AI settings dialog),
+        # so the live-check UI does not disable itself when a runtime key exists.
+        "ai_configured": configured,
         "provider": provider_type,
-        "model": models.get(provider_type, "mock"),
+        "model": model,
+        "vision_model": vision_model,
+        "vision_capable": configured,  # all wired providers accept images
     }
 
 @app.post("/attempts")
@@ -318,6 +327,162 @@ Focus on calculus/engineering math. Be honest about uncertainty."""
             confidence=0.0,
             needs_user_confirmation=True
         )
+
+# ---------------------------------------------------------------------------
+# Live check: the handwriting flow used by the laser overlay.
+#
+# Differences from /ai/handwriting-check (kept for backwards compatibility):
+#  * untrusted model JSON is sanitized before use
+#  * every transition is re-verified with SymPy; AI-only claims are labelled
+#  * identical captures are cached and concurrent duplicates are single-flight
+#  * hints are stripped of final answers
+# ---------------------------------------------------------------------------
+_LIVE_FEEDBACK_CACHE = FeedbackCache()
+_LIVE_LOCKS: dict[str, asyncio.Lock] = {}
+_LIVE_LOCKS_GUARD: Optional[asyncio.Lock] = None
+
+
+class LiveCheckRequest(BaseModel):
+    image_base64: str
+    question_id: Optional[str] = None
+    question_text: Optional[str] = None
+    force: bool = False
+
+
+class LiveCheckResponse(BaseModel):
+    steps: List[dict]
+    first_error_step: Optional[int]
+    error_bbox: Optional[dict]
+    error_explanation: Optional[str]
+    hint: str
+    next_step: Optional[str]
+    confidence: float
+    needs_user_confirmation: bool
+    verification_status: str
+    verification_message: str
+    verification: dict
+    ai_flagged_error_step: Optional[int] = None
+    provider: str = "mock"
+    model: str = "mock"
+    cached: bool = False
+    tokens_used: int = 0
+    request_id: str = ""
+
+
+async def _live_lock_for(key: str) -> asyncio.Lock:
+    global _LIVE_LOCKS_GUARD
+    # The guard is created lazily because module import can happen before any
+    # event loop exists (e.g. pytest collection).
+    if _LIVE_LOCKS_GUARD is None:
+        _LIVE_LOCKS_GUARD = asyncio.Lock()
+    async with _LIVE_LOCKS_GUARD:
+        lock = _LIVE_LOCKS.get(key)
+        if lock is None:
+            # Bound the lock table: finished, unwaited locks hold no state.
+            if len(_LIVE_LOCKS) > 128:
+                for stale_key, stale_lock in list(_LIVE_LOCKS.items()):
+                    if not stale_lock.locked():
+                        _LIVE_LOCKS.pop(stale_key, None)
+            lock = asyncio.Lock()
+            _LIVE_LOCKS[key] = lock
+        return lock
+
+
+def _live_response(payload: dict, cached: bool, provider: str, model: str,
+                   tokens_used: int, request_id: str) -> LiveCheckResponse:
+    return LiveCheckResponse(
+        steps=payload.get("steps", []),
+        first_error_step=payload.get("first_error_step"),
+        error_bbox=payload.get("error_bbox"),
+        error_explanation=payload.get("error_explanation"),
+        hint=payload.get("hint") or "No hint available.",
+        next_step=payload.get("next_step"),
+        confidence=float(payload.get("confidence") or 0.0),
+        needs_user_confirmation=bool(payload.get("needs_user_confirmation", True)),
+        verification_status=payload.get("verification_status", "cannot-verify"),
+        verification_message=payload.get("verification_message", ""),
+        verification=payload.get("verification", {}),
+        ai_flagged_error_step=payload.get("ai_flagged_error_step"),
+        provider=provider,
+        model=model,
+        cached=cached,
+        tokens_used=tokens_used,
+        request_id=request_id,
+    )
+
+
+@app.post("/ai/live-check", response_model=LiveCheckResponse)
+async def ai_live_check(req: LiveCheckRequest):
+    try:
+        image_base64 = clean_image_base64(req.image_base64)
+    except LiveCheckInputError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    provider = get_provider()
+    provider_name = type(provider).__name__
+    model = str(getattr(provider, "model", "mock") or "mock")
+    question_text = (req.question_text or "")[:2000]
+
+    # The mock provider returns made-up "recognized steps" for offline tests.
+    # Those must never be presented as real maths feedback.
+    from .ai_provider import MockProvider
+
+    if isinstance(provider, MockProvider):
+        payload = error_feedback(
+            "No AI provider is configured. Add a key in AI settings, or keep using SymPy-only checks.",
+            model="mock",
+        )
+        return _live_response(payload, False, provider_name, "mock", 0, str(uuid.uuid4()))
+
+    cache_key = make_cache_key(
+        image_base64, req.question_id, question_text, provider_name, model
+    )
+    if not req.force:
+        cached = _LIVE_FEEDBACK_CACHE.get(cache_key)
+        if cached is not None:
+            return _live_response(cached, True, provider_name, model, 0, str(uuid.uuid4()))
+
+    # Single-flight: a second concurrent request with the same image waits for
+    # the first one instead of spending a second API call.
+    lock = await _live_lock_for(cache_key)
+    async with lock:
+        if not req.force:
+            cached = _LIVE_FEEDBACK_CACHE.get(cache_key)
+            if cached is not None:
+                return _live_response(cached, True, provider_name, model, 0, str(uuid.uuid4()))
+
+        prompt = build_prompt(question_text)
+        response = await provider.generate_vision(prompt, image_base64)
+
+        if response.error:
+            # Never echo a raw provider payload: error strings can contain
+            # request URLs, and the UI only needs a short actionable reason.
+            detail = str(response.error)[:300]
+            raise HTTPException(status_code=502, detail=f"AI provider error: {detail}")
+
+        # Providers keep their own 7-day disk cache. A hit is still useful, but
+        # report it honestly as cached and zero tokens for this request.
+        provider_cached = bool(getattr(response, "cached", False))
+        request_tokens = 0 if provider_cached else response.tokens_used
+
+        raw = parse_ai_json(response.content or "")
+        if raw is None:
+            payload = error_feedback(
+                "The model reply could not be read. Try again, or type the step that looks wrong.",
+                model=model,
+            )
+            # Do not cache a malformed reply: it is usually transient.
+            return _live_response(
+                payload, provider_cached, provider_name, model, request_tokens, str(uuid.uuid4())
+            )
+
+        payload = build_feedback(raw)
+        payload["model"] = model
+        _LIVE_FEEDBACK_CACHE.put(cache_key, payload)
+        return _live_response(
+            payload, provider_cached, provider_name, model, request_tokens, str(uuid.uuid4())
+        )
+
 
 # ---------------------------------------------------------------------------
 # AI settings: read/update the runtime provider without editing .env

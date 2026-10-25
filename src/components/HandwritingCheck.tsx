@@ -4,6 +4,8 @@ import { useWhiteboard } from '../hooks/useWhiteboard';
 import { ConfirmDialog } from './ConfirmDialog';
 import { useToast } from '../context/ToastContext';
 import { useAiFeedback } from '../context/AiFeedbackContext';
+import { LiveMathOverlay } from './LiveMathOverlay';
+import { captureScene } from '../lib/captureScene';
 
 interface HandwritingCheckProps {
   questionId: string;
@@ -40,6 +42,7 @@ export const HandwritingCheck: React.FC<HandwritingCheckProps> = ({
   const {
     initialData,
     liveElements,
+    liveViewport,
     isLoaded,
     handleChange,
     clearBoard,
@@ -96,19 +99,16 @@ export const HandwritingCheck: React.FC<HandwritingCheckProps> = ({
   }, [clearBoard]);
 
   const captureCanvas = useCallback(async (): Promise<string> => {
-    if (!containerRef.current) return '';
-    
     try {
-      const canvas = containerRef.current.querySelector('canvas');
-      if (canvas) {
-        return canvas.toDataURL('image/png').split(',')[1];
-      }
-      throw new Error('Canvas element not found');
+      // Export the real Excalidraw scene; querying one <canvas> can capture an
+      // empty layer because Excalidraw renders across several canvases.
+      const captured = await captureScene(liveElements, null);
+      return captured?.imageBase64 || '';
     } catch (e) {
       console.error('Canvas capture failed:', e);
       return '';
     }
-  }, []);
+  }, [liveElements]);
 
   const analyzeHandwriting = useCallback(async () => {
     // Check AI configuration before analyzing
@@ -360,6 +360,13 @@ export const HandwritingCheck: React.FC<HandwritingCheckProps> = ({
               loadScene: true,
             },
           }}
+        />
+        <LiveMathOverlay
+          elements={liveElements}
+          view={liveViewport}
+          containerRef={containerRef}
+          questionId={questionId}
+          aiConfigured={aiConfigured}
         />
       </div>
 

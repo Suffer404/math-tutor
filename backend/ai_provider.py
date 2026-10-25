@@ -143,6 +143,12 @@ class OpenAIProvider(AIProvider):
     def __init__(self, api_key: str, model: str = "gpt-4o-mini"):
         self.api_key = api_key
         self.model = model
+        # Optional separate model for images; the text model may be text-only.
+        self.vision_model = (
+            os.getenv("OPENAI_VISION_MODEL")
+            or os.getenv("AI_VISION_MODEL")
+            or model
+        )
         self.client = httpx.AsyncClient(
             base_url="https://api.openai.com/v1",
             headers={"Authorization": f"Bearer {api_key}"},
@@ -242,7 +248,7 @@ class OpenAIProvider(AIProvider):
             
         try:
             response = await self.client.post("/chat/completions", json={
-                "model": "gpt-4o-mini",
+                "model": self.vision_model,
                 "messages": [{
                     "role": "user",
                     "content": [
@@ -255,20 +261,20 @@ class OpenAIProvider(AIProvider):
             })
             
             if response.status_code == 429:
-                return AIResponse(content="", model="gpt-4o-mini", tokens_used=0, error="Rate limit exceeded")
+                return AIResponse(content="", model=self.vision_model, tokens_used=0, error="Rate limit exceeded")
             response.raise_for_status()
             
             data = response.json()
             ai_response = AIResponse(
                 content=data["choices"][0]["message"]["content"],
-                model="gpt-4o-mini",
+                model=self.vision_model,
                 tokens_used=data.get("usage", {}).get("total_tokens", 0)
             )
             self._save_cache(cache_key, ai_response)
             return ai_response
             
         except Exception as e:
-            return AIResponse(content="", model="gpt-4o-mini", tokens_used=0, error=str(e))
+            return AIResponse(content="", model=self.vision_model, tokens_used=0, error=str(e))
 
 class RequestyProvider(AIProvider):
     """Requesty AI Router provider (OpenAI-compatible API)."""
@@ -277,6 +283,13 @@ class RequestyProvider(AIProvider):
         self.api_key = api_key
         # model and base_url can come from the Settings dialog, then env
         self.model = model or os.getenv("REQUESTY_MODEL") or "openai/gpt-4o-mini"
+        # A text model (e.g. a cheap coding model) may not accept images, so
+        # allow a separate vision model without changing the text model.
+        self.vision_model = (
+            os.getenv("REQUESTY_VISION_MODEL")
+            or os.getenv("AI_VISION_MODEL")
+            or self.model
+        )
         self.base_url = (base_url or os.getenv("REQUESTY_BASE_URL") or "https://router.requesty.ai/v1").rstrip("/")
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
@@ -378,7 +391,7 @@ class RequestyProvider(AIProvider):
             
         try:
             response = await self.client.post("/chat/completions", json={
-                "model": self.model,
+                "model": self.vision_model,
                 "messages": [{
                     "role": "user",
                     "content": [
@@ -391,11 +404,11 @@ class RequestyProvider(AIProvider):
             })
             
             if response.status_code == 429:
-                return AIResponse(content="", model=self.model, tokens_used=0, error="Rate limit exceeded")
+                return AIResponse(content="", model=self.vision_model, tokens_used=0, error="Rate limit exceeded")
             if response.status_code == 402:
                 return AIResponse(
                     content="",
-                    model=self.model,
+                    model=self.vision_model,
                     tokens_used=0,
                     error="Requesty: account balance is too low. Top up at app.requesty.ai/settings/billing.",
                 )
@@ -404,14 +417,14 @@ class RequestyProvider(AIProvider):
             data = response.json()
             ai_response = AIResponse(
                 content=data["choices"][0]["message"]["content"],
-                model=self.model,
+                model=self.vision_model,
                 tokens_used=data.get("usage", {}).get("total_tokens", 0)
             )
             self._save_cache(cache_key, ai_response)
             return ai_response
             
         except Exception as e:
-            return AIResponse(content="", model=self.model, tokens_used=0, error=str(e))
+            return AIResponse(content="", model=self.vision_model, tokens_used=0, error=str(e))
 
 class AnthropicProvider(AIProvider):
     """Anthropic Claude API provider."""
@@ -419,6 +432,11 @@ class AnthropicProvider(AIProvider):
     def __init__(self, api_key: str, model: str = "claude-3-haiku-20240307"):
         self.api_key = api_key
         self.model = model
+        self.vision_model = (
+            os.getenv("ANTHROPIC_VISION_MODEL")
+            or os.getenv("AI_VISION_MODEL")
+            or model
+        )
         self.client = httpx.AsyncClient(
             base_url="https://api.anthropic.com/v1",
             headers={
@@ -460,7 +478,7 @@ class AnthropicProvider(AIProvider):
     async def generate_vision(self, prompt: str, image_base64: str) -> AIResponse:
         try:
             response = await self.client.post("/messages", json={
-                "model": "claude-3-haiku-20240307",
+                "model": self.vision_model,
                 "max_tokens": 1500,
                 "temperature": 0.2,
                 "messages": [{
@@ -474,9 +492,14 @@ class AnthropicProvider(AIProvider):
             response.raise_for_status()
             data = response.json()
             content = "".join([block["text"] for block in data.get("content", []) if block.get("type") == "text"])
-            return AIResponse(content=content, model="claude-3-haiku", tokens_used=100)
+            usage = data.get("usage", {})
+            return AIResponse(
+                content=content,
+                model=self.vision_model,
+                tokens_used=usage.get("input_tokens", 0) + usage.get("output_tokens", 0),
+            )
         except Exception as e:
-            return AIResponse(content="", model="claude-3-haiku", tokens_used=0, error=str(e))
+            return AIResponse(content="", model=self.vision_model, tokens_used=0, error=str(e))
 
 def get_provider() -> AIProvider:
     """Build the provider from ai_config.json (Settings dialog), else from .env."""

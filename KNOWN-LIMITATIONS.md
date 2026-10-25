@@ -6,13 +6,15 @@
 - **SymPy Coverage**: Supports calculus (diff, integrate, limits, solve), algebra (simplify, equivalence), and basic trigonometry. Does not support: differential equations, series expansions, vector calculus, linear algebra, complex analysis.
 - **Equivalence Checking**: Uses multiple methods (direct, simplify, numerical sampling). May report "equivalent: false" for mathematically equivalent expressions that differ in form (e.g., `sin(x)^2 + cos(x)^2` vs `1` without simplification).
 - **Unverified Results**: When SymPy cannot parse or verify, returns `unsupported: true` with `confidence: 0`. This is intentional - AI opinion ≠ mathematical proof.
-- **Step Verification**: Only checks algebraic equivalence, not logical correctness of derivation steps.
+- **Step Verification**: Checks derivative transitions and same-left-hand-side algebraic equivalence. Other derivation operations (integration, substitution, limits) remain unverified and are never claimed wrong by SymPy.
 
 ### Handwriting Recognition
-- **Mock Provider Only**: Production version uses mock AI provider. Real handwriting recognition requires configured OpenAI/Anthropic API keys.
-- **Canvas Capture**: Captures entire Excalidraw canvas. May include UI elements if not cropped.
-- **No On-Device OCR**: No local handwriting recognition (would require ML model bundle).
-- **Single Image**: Analyzes complete solution at once, not stroke-by-stroke.
+- **Vision Provider Required**: Live detection needs an image-capable AI provider configured in `.env` or AI settings. The mock provider is refused by `/ai/live-check` so no fabricated maths is shown.
+- **Canvas Capture**: Uses `exportToBlob` on the Excalidraw scene (not a single `<canvas>`), so UI chrome is excluded; the board is downscaled to max 1400 px and sent as PNG.
+- **No On-Device OCR**: No local handwriting model is bundled. Ollama with a small vision model is the zero-cost local option, with lower accuracy.
+- **Symbol-Level Location**: Boxes come from a general vision model, not a handwriting OCR model. A rejected or absent box falls back to the whole ink line, then to the whole step text; never a guessed symbol.
+- **Single Image**: Analyzes the complete working at once, not stroke-by-stroke. Automatic checks wait ~2.6 s after the pen stops.
+- **Step Verification Scope**: SymPy proves derivative transitions and same-left-hand-side equivalences. Integrals, unusual notation and unparsable handwriting are labelled `unverified` / `ai-only`, never `sympy-confirmed`.
 
 ### Question Bank
 - **Schema v1.0 Only**: No migration path for schema changes yet.
@@ -102,7 +104,8 @@
 - **No E2E Tests**: No Playwright/Cypress tests.
 - **No Integration Tests**: Frontend-backend integration not tested.
 - **No Load Testing**: Single-user only.
-- **Mock AI Only**: Real AI provider behavior not tested.
+- **Mock AI Only**: Backend live-check tests and frontend overlay tests use mocked AI responses. Real provider accuracy, quota behaviour and latency were not exercised (no paid calls made).
+- **No Real-Handwriting Benchmark**: Recognition accuracy on the pen tablet was not benchmarked against a labelled sample.
 
 ## Future Work (Post-Phase 8)
 

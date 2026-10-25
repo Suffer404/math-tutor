@@ -23,23 +23,115 @@ SAFE_TRANSFORMATIONS = standard_transformations + (implicit_multiplication_appli
 class SymPyVerificationError(Exception):
     pass
 
+# antlr4 (needed by sympy's parse_latex) is optional in this project. Track
+# whether it actually loaded so we can skip it after the first failure instead
+# of paying for a failed import on every step.
+_LATEX_PARSER_AVAILABLE = True
+
+_LATEX_FUNCTIONS = {
+    'sin', 'cos', 'tan', 'cot', 'sec', 'csc',
+    'arcsin', 'arccos', 'arctan', 'asin', 'acos', 'atan',
+    'sinh', 'cosh', 'tanh', 'coth', 'sech', 'csch',
+    'asinh', 'acosh', 'atanh', 'exp', 'sqrt', 'abs', 'log', 'ln',
+}
+
+
+def latex_to_sympy_text(latex_str: str) -> str:
+    """Convert the common handwritten-AI LaTeX subset to sympy_parser syntax.
+
+    This is a deliberately small, whitelist-style converter. It exists because
+    sympy's full ``parse_latex`` needs the optional antlr4 runtime, which this
+    zero-budget project does not install. Unknown backslash commands are
+    rejected instead of being silently dropped, so an unparsable step becomes
+    "cannot verify" rather than a confidently wrong verdict.
+    """
+    text = latex_str.strip()
+    text = re.sub(r'^\$+|\$+$', '', text)
+    text = re.sub(
+        r'\\(?:left|right|displaystyle|textstyle|,|!|;|:|quad|qquad|\s)',
+        ' ',
+        text,
+    )
+    text = re.sub(r'\\(?:text|mathrm|operatorname)\s*\{([^{}]*)\}', r' \1 ', text)
+
+    # \frac{a}{b}; repeat to unwrap nested fractions from the inside out.
+    for _ in range(12):
+        new = re.sub(r'\\frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}', r'((\1)/(\2))', text)
+        if new == text:
+            break
+        text = new
+
+    # \sqrt[n]{x} and \sqrt{x}
+    text = re.sub(r'\\sqrt\s*\[([^\]]*)\]\s*\{([^{}]*)\}', r'((\2)**(1/(\1)))', text)
+    text = re.sub(r'\\sqrt\s*\{([^{}]*)\}', r'sqrt(\1)', text)
+    text = re.sub(r'\\sqrt\s*([A-Za-z0-9]+)', r'sqrt(\1)', text)
+
+    for name in sorted(_LATEX_FUNCTIONS, key=len, reverse=True):
+        if name == 'ln':
+            continue
+        # A function glued to a factor must become an explicit product:
+        # 2x\cos(x) -> 2x*cos(x), otherwise sympy reads c*o*s.
+        text = re.sub(
+            r'(?<=[A-Za-z0-9)])' + re.escape('\\' + name), '*' + name, text
+        )
+        text = text.replace('\\' + name, name)
+    text = text.replace('\\ln', 'log')
+    text = text.replace('arcsin', 'asin').replace('arccos', 'acos').replace('arctan', 'atan')
+
+    text = text.replace('\\cdot', '*').replace('\\times', '*').replace('\\div', '/')
+    text = text.replace('\\pi', 'pi').replace('\\infty', 'oo')
+    text = text.replace('\\le', '<=').replace('\\leq', '<=')
+    text = text.replace('\\ge', '>=').replace('\\geq', '>=')
+    text = text.replace('\\ne', '!=').replace('\\neq', '!=')
+
+    # ^{...} needs parentheses before braces are dropped: e^{2x} -> e**(2x).
+    text = re.sub(r'\^\s*\{([^{}]*)\}', r'**(\1)', text)
+    text = text.replace('{', '').replace('}', '')
+    text = text.replace('^', '**')
+    text = text.replace('−', '-').replace('–', '-').replace('×', '*')
+    text = text.replace('÷', '/').replace('·', '*')
+    text = re.sub(r'\s+', ' ', text).strip()
+
+    if '\\' in text:
+        command = re.search(r'\\[A-Za-z]+', text)
+        label = command.group(0) if command else "backslash"
+        raise SymPyVerificationError(f"Unsupported LaTeX command: {label}")
+    if not text:
+        raise SymPyVerificationError("Empty LaTeX expression")
+    return text
+
+
 def parse_latex_safe(latex_str: str) -> sp.Expr:
-    """Parse LaTeX string safely, return SymPy expression."""
+    """Parse a LaTeX snippet safely, returning a SymPy expression.
+
+    Prefers sympy's antlr parser when installed, then falls back to the
+    whitelisted converter + sympy_parser. Raises SymPyVerificationError when
+    neither route can parse the input.
+    """
+    global _LATEX_PARSER_AVAILABLE
+
+    cleaned = latex_str.strip()
+    cleaned = re.sub(r'\\left|\\right', '', cleaned)
+    cleaned = re.sub(r'\\!|\\,|\\;', ' ', cleaned)
+
+    latex_error: Optional[Exception] = None
+    if _LATEX_PARSER_AVAILABLE:
+        try:
+            return parse_latex(cleaned)
+        except ImportError as e:  # antlr4 runtime missing
+            _LATEX_PARSER_AVAILABLE = False
+            latex_error = e
+        except Exception as e:
+            latex_error = e
+
     try:
-        # Clean up common LaTeX artifacts
-        cleaned = latex_str.strip()
-        # Remove \left, \right
-        cleaned = re.sub(r'\\left|\\right', '', cleaned)
-        # Replace \cdot with *
-        cleaned = cleaned.replace(r'\cdot', '*')
-        # Replace \times with *
-        cleaned = cleaned.replace(r'\times', '*')
-        # Replace \frac with proper division (handled by parse_latex)
-        
-        expr = parse_latex(cleaned)
-        return expr
-    except Exception as e:
-        raise SymPyVerificationError(f"Failed to parse LaTeX: {str(e)}")
+        plain = latex_to_sympy_text(cleaned)
+        return parse_sympy_safe(plain)
+    except SymPyVerificationError as fallback_error:
+        raise SymPyVerificationError(
+            f"Failed to parse LaTeX: {fallback_error}"
+            + (f" (LaTeX parser: {latex_error})" if latex_error else "")
+        )
 
 def parse_sympy_safe(expr_str: str) -> sp.Expr:
     """Parse a plain math expression safely using sympy_parser."""

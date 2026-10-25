@@ -42,8 +42,8 @@ describe('App & Question Navigation', () => {
   it('navigates to next and previous questions via floating card', () => {
     render(<App />);
     // Next/Previous buttons are now in the floating question card
-    const nextBtn = screen.getByTitle('Next question');
-    const prevBtn = screen.getByTitle('Previous question');
+    const nextBtn = screen.getByTitle('Next (→)');
+    const prevBtn = screen.getByTitle('Previous (←)');
 
     expect(prevBtn).toBeDisabled();
 
@@ -58,7 +58,7 @@ describe('App & Question Navigation', () => {
   it('shows hints when requested via floating question card', () => {
     render(<App />);
     // The hint button is now in the floating question card
-    const hintBtn = screen.getByText('Show Hint');
+    const hintBtn = screen.getByText(/Show hint/i);
     fireEvent.click(hintBtn);
 
     expect(screen.getByText(SAMPLE_QUESTIONS[0].hints[0], { exact: false })).toBeDefined();

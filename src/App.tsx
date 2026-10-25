@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import katex from 'katex';
 import { QuestionPanel } from './components/QuestionPanel';
 import { Whiteboard } from './components/Whiteboard';
@@ -175,11 +175,11 @@ const AppContent: React.FC = () => {
   }, [questions]);
   
   // Floating panel states - persisted in localStorage
-  const [questionPanelOpen, setQuestionPanelOpen] = useState(() => {
+  const [questionPanelOpen, setQuestionPanelOpen] = useState<boolean>(() => {
     const saved = localStorage.getItem('math-tutor-question-panel-open');
     return saved !== null ? JSON.parse(saved) : true;
   });
-  const [handwritingStripOpen, setHandwritingStripOpen] = useState(() => {
+  const [handwritingStripOpen, setHandwritingStripOpen] = useState<boolean>(() => {
     const saved = localStorage.getItem('math-tutor-handwriting-strip-open');
     return saved !== null ? JSON.parse(saved) : viewMode === 'handwriting';
   });
@@ -287,7 +287,14 @@ const AppContent: React.FC = () => {
           background: 'var(--bg-primary)',
         }}
       >
-        {viewMode === 'practice' && <Whiteboard />}
+        {viewMode === 'practice' && (
+          <Whiteboard
+            questionId={currentQuestion.id}
+            questionText={currentQuestion.question_text}
+            aiConfigured={health ? health.ai_configured : healthLoading ? null : false}
+            providerLabel={health ? `${health.provider} (${health.model})` : undefined}
+          />
+        )}
         {viewMode === 'handwriting' && (
           <HandwritingCheck
             questionId={currentQuestion.id}

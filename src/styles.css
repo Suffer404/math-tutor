@@ -391,3 +391,349 @@ kbd {
 .gap-1 { gap: 0.5rem; }
 .gap-2 { gap: 1rem; }
 .w-full { width: 100%; }
+/* ---------------------------------------------------------------------------
+   Live maths check + laser overlay.
+   The layer is a sibling of the Excalidraw canvas: it is pointer-transparent
+   except for its own buttons, and never touches scene elements, history or
+   saved board state.
+--------------------------------------------------------------------------- */
+.live-check-controls {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 26;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  max-width: calc(100% - 24px);
+  pointer-events: none;
+}
+
+.live-check-controls__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.live-check-controls__status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  max-width: 340px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-secondary) 88%, transparent);
+  border: 1px solid var(--border-primary);
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.15));
+  pointer-events: auto;
+}
+
+.live-check-controls__meta {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.live-check-controls__error {
+  font-size: 0.75rem;
+  color: var(--error);
+  text-align: right;
+}
+
+.live-check-controls__button {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.live-check-controls__dismiss {
+  padding: 0.25rem 0.5rem;
+  line-height: 1;
+  font-size: 1rem;
+}
+
+.live-status {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+.live-status--waiting { color: var(--text-muted); }
+.live-status--checking { color: var(--info); }
+.live-status--error { color: var(--error); }
+.live-status--ok { color: var(--success); }
+
+.live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.625rem;
+  border: 1px solid var(--border-primary);
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.live-pill:hover:not(:disabled) { background: var(--bg-hover); }
+.live-pill:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.live-pill__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.live-pill--on {
+  border-color: var(--error);
+  color: var(--error);
+  background: var(--error-bg);
+}
+
+.live-pill--on .live-pill__dot {
+  background: var(--error);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--error) 25%, transparent);
+  animation: laserBlink 1.6s ease-in-out infinite;
+}
+
+.laser-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 19;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.laser-target {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  border: 2px solid #ff2d2d;
+  border-radius: 6px;
+  background: rgba(255, 45, 45, 0.055);
+  box-shadow:
+    0 0 0 1px rgba(255, 45, 45, 0.18),
+    0 0 18px rgba(255, 45, 45, 0.35);
+  cursor: pointer;
+  pointer-events: auto;
+  animation: laserPulse 1.9s ease-in-out infinite;
+}
+
+.laser-target--approx {
+  border-style: dashed;
+  background: rgba(255, 45, 45, 0.035);
+  box-shadow: 0 0 12px rgba(255, 45, 45, 0.22);
+}
+
+.laser-target:focus-visible {
+  outline: 3px solid #ffd54f;
+  outline-offset: 3px;
+}
+
+.laser-corner {
+  position: absolute;
+  width: 13px;
+  height: 13px;
+  border: 0 solid #ff2d2d;
+  pointer-events: none;
+}
+
+.laser-corner--tl { top: -2px; left: -2px; border-top-width: 3px; border-left-width: 3px; border-top-left-radius: 5px; }
+.laser-corner--tr { top: -2px; right: -2px; border-top-width: 3px; border-right-width: 3px; border-top-right-radius: 5px; }
+.laser-corner--bl { bottom: -2px; left: -2px; border-bottom-width: 3px; border-left-width: 3px; border-bottom-left-radius: 5px; }
+.laser-corner--br { bottom: -2px; right: -2px; border-bottom-width: 3px; border-right-width: 3px; border-bottom-right-radius: 5px; }
+
+.laser-dot {
+  position: absolute;
+  left: -6px;
+  top: -6px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #ff1744;
+  box-shadow:
+    0 0 0 3px rgba(255, 23, 68, 0.25),
+    0 0 12px 5px rgba(255, 23, 68, 0.55);
+  animation: laserBlink 1.2s ease-in-out infinite;
+}
+
+.laser-scan {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(255, 23, 68, 0.9), transparent);
+  animation: laserScan 2.6s linear infinite;
+  pointer-events: none;
+}
+
+.laser-label {
+  position: absolute;
+  left: -2px;
+  top: -24px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: #c62828;
+  color: #fff;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.laser-hint {
+  position: absolute;
+  z-index: 31;
+  width: 310px;
+  max-width: calc(100% - 24px);
+  padding: 10px 12px;
+  border: 1px solid var(--border-primary);
+  border-left: 4px solid var(--error);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-lg, 0 8px 28px rgba(0, 0, 0, 0.25));
+  pointer-events: auto;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.laser-hint p { margin: 6px 0 0; }
+
+.laser-hint__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.laser-hint__badge {
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.laser-hint__badge--sympy-confirmed { background: var(--error-bg); color: var(--error); }
+.laser-hint__badge--ai-only { background: var(--warning-bg); color: var(--warning); }
+.laser-hint__badge--cannot-verify { background: var(--warning-bg); color: var(--warning); }
+.laser-hint__badge--sympy-cleared { background: var(--success-bg); color: var(--success); }
+
+.laser-hint__explanation { color: var(--text-secondary); }
+.laser-hint__next { color: var(--info); }
+.laser-hint__meta { color: var(--text-muted); font-size: 0.6875rem; }
+
+.laser-hint__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.laser-hint__actions .btn {
+  padding: 0.2rem 0.55rem;
+  font-size: 0.75rem;
+}
+
+.live-fallback {
+  position: absolute;
+  left: 12px;
+  bottom: 96px;
+  max-width: min(440px, 78%);
+  padding: 8px 10px;
+  border: 1px dashed var(--error);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-secondary) 94%, transparent);
+  box-shadow: var(--shadow-md, 0 4px 12px rgba(0, 0, 0, 0.18));
+  pointer-events: auto;
+}
+
+.live-fallback__title {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--error);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.live-fallback__step {
+  display: block;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--error);
+  border-radius: 5px;
+  background: var(--error-bg);
+  color: var(--text-primary);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.8125rem;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.live-consent {
+  position: absolute;
+  right: 12px;
+  bottom: 88px;
+  z-index: 40;
+  width: min(360px, calc(100% - 24px));
+  padding: 14px;
+  border: 1px solid var(--border-primary);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-lg, 0 8px 28px rgba(0, 0, 0, 0.28));
+  pointer-events: auto;
+}
+
+.live-consent h4 { margin: 0 0 8px; font-size: 0.9375rem; }
+.live-consent p { margin: 0 0 8px; font-size: 0.8125rem; line-height: 1.45; color: var(--text-secondary); }
+.live-consent__note { color: var(--text-muted) !important; font-size: 0.75rem !important; }
+.live-consent__actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
+
+@keyframes laserPulse {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(255, 45, 45, 0.18), 0 0 14px rgba(255, 45, 45, 0.28); }
+  50% { box-shadow: 0 0 0 1px rgba(255, 45, 45, 0.3), 0 0 26px rgba(255, 45, 45, 0.5); }
+}
+
+@keyframes laserBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+@keyframes laserScan {
+  0% { top: 0; opacity: 0.2; }
+  50% { opacity: 0.9; }
+  100% { top: calc(100% - 2px); opacity: 0.2; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .laser-target,
+  .laser-target--approx,
+  .laser-dot,
+  .laser-scan,
+  .live-pill--on .live-pill__dot {
+    animation: none;
+  }
+  .laser-scan { display: none; }
+}
+
+@media (max-width: 640px) {
+  .live-check-controls { right: 8px; bottom: 8px; }
+  .live-check-controls__status { max-width: 230px; }
+  .laser-hint { width: 260px; }
+  .live-consent { bottom: 76px; }
+}
