@@ -1,4 +1,4 @@
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
 import { Excalidraw } from '@excalidraw/excalidraw';
 import { useWhiteboard } from '../hooks/useWhiteboard';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -33,6 +33,19 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
 
   const [showClearConfirm, setShowClearConfirm] = React.useState(false);
   const boardContainerRef = useRef<HTMLDivElement>(null);
+  // Stable UIOptions: a fresh object on every render makes Excalidraw re-run
+  // its internal update effects, which can loop when onChange updates state.
+  const uiOptions = useMemo(
+    () => ({
+      canvasActions: {
+        changeViewBackgroundColor: true,
+        clearCanvas: false, // We handle clear ourselves with confirmation
+        export: {},
+        loadScene: true,
+      },
+    }),
+    [],
+  );
 
   const handleClear = useCallback(() => {
     setShowClearConfirm(true);
@@ -61,14 +74,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
         <Excalidraw
           initialData={initialData || { elements: [] }}
           onChange={handleChange}
-          UIOptions={{
-            canvasActions: {
-              changeViewBackgroundColor: true,
-              clearCanvas: false, // We handle clear ourselves with confirmation
-              export: {},
-              loadScene: true,
-            },
-          }}
+          UIOptions={uiOptions}
         />
         <LiveMathOverlay
           elements={liveElements}

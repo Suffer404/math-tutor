@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Excalidraw } from '@excalidraw/excalidraw';
 import { useWhiteboard } from '../hooks/useWhiteboard';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -61,6 +61,18 @@ export const HandwritingCheck: React.FC<HandwritingCheckProps> = ({
   const [aiConfigured, setAiConfigured] = useState<boolean | null>(null);
   const [showAiConfigSheet, setShowAiConfigSheet] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Stable object: Excalidraw re-runs internal effects when UIOptions changes.
+  const uiOptions = useMemo(
+    () => ({
+      canvasActions: {
+        changeViewBackgroundColor: true,
+        clearCanvas: false,
+        export: {},
+        loadScene: true,
+      },
+    }),
+    [],
+  );
 
   // Check AI configuration on mount
   useEffect(() => {
@@ -352,14 +364,7 @@ export const HandwritingCheck: React.FC<HandwritingCheckProps> = ({
         <Excalidraw
           initialData={initialData || { elements: [] }}
           onChange={handleChange}
-          UIOptions={{
-            canvasActions: {
-              changeViewBackgroundColor: true,
-              clearCanvas: false,
-              export: {},
-              loadScene: true,
-            },
-          }}
+          UIOptions={uiOptions}
         />
         <LiveMathOverlay
           elements={liveElements}

@@ -399,14 +399,15 @@ kbd {
 --------------------------------------------------------------------------- */
 .live-check-controls {
   position: absolute;
-  right: 12px;
-  bottom: 12px;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
   z-index: 26;
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 6px;
-  max-width: calc(100% - 24px);
+  max-width: min(360px, calc(100% - 24px));
   pointer-events: none;
 }
 
@@ -416,13 +417,13 @@ kbd {
   gap: 6px;
   pointer-events: auto;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 .live-check-controls__status {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 2px;
   max-width: 340px;
   padding: 4px 8px;
@@ -436,13 +437,13 @@ kbd {
 .live-check-controls__meta {
   font-size: 0.6875rem;
   color: var(--text-muted);
-  text-align: right;
+  text-align: left;
 }
 
 .live-check-controls__error {
   font-size: 0.75rem;
   color: var(--error);
-  text-align: right;
+  text-align: left;
 }
 
 .live-check-controls__button {
@@ -460,7 +461,7 @@ kbd {
   font-size: 0.75rem;
   font-weight: 500;
   color: var(--text-secondary);
-  text-align: right;
+  text-align: left;
 }
 
 .live-status--waiting { color: var(--text-muted); }
@@ -688,8 +689,9 @@ kbd {
 
 .live-consent {
   position: absolute;
-  right: 12px;
-  bottom: 88px;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
   z-index: 40;
   width: min(360px, calc(100% - 24px));
   padding: 14px;
@@ -734,8 +736,13 @@ kbd {
 }
 
 @media (max-width: 640px) {
-  .live-check-controls { right: 8px; bottom: 8px; }
+  .live-check-controls {
+    left: 8px;
+    top: auto;
+    bottom: 8px;
+    transform: none;
+  }
   .live-check-controls__status { max-width: 230px; }
   .laser-hint { width: 260px; }
-  .live-consent { bottom: 76px; }
+  .live-consent { width: calc(100% - 24px); }
 }

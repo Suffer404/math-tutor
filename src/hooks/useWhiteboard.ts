@@ -162,13 +162,27 @@ export function useWhiteboard(options: UseWhiteboardOptions): UseWhiteboardRetur
   ) => {
     // Update live elements immediately for UI feedback
     setLiveElements(elements);
-    setLiveViewport({
+
+    // Only publish a new viewport when pan/zoom/size actually changed. The
+    // overlay needs this, but writing a fresh object on every onChange makes
+    // the board re-render for identical values; Excalidraw reacts to that by
+    // calling onChange again, which is an infinite update loop.
+    const nextViewport: ViewportTransform = {
       zoom: normalizeZoom(appState.zoom),
       scrollX: appState.scrollX ?? 0,
       scrollY: appState.scrollY ?? 0,
       offsetLeft: appState.offsetLeft ?? 0,
       offsetTop: appState.offsetTop ?? 0,
-    });
+    };
+    setLiveViewport((previous) =>
+      previous.zoom === nextViewport.zoom &&
+      previous.scrollX === nextViewport.scrollX &&
+      previous.scrollY === nextViewport.scrollY &&
+      previous.offsetLeft === nextViewport.offsetLeft &&
+      previous.offsetTop === nextViewport.offsetTop
+        ? previous
+        : nextViewport,
+    );
 
     if (!autoSave) return;
 
