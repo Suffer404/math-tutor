@@ -524,6 +524,8 @@ kbd {
     0 0 18px rgba(255, 45, 45, 0.35);
   cursor: pointer;
   pointer-events: auto;
+  min-width: 32px;
+  min-height: 32px;
   animation: laserPulse 1.9s ease-in-out infinite;
 }
 

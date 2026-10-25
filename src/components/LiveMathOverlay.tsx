@@ -250,7 +250,7 @@ export const LiveMathOverlay: React.FC<LiveMathOverlayProps> = ({
             aria-pressed={liveEnabled}
             aria-label={liveEnabled ? 'Turn off automatic live check' : 'Turn on automatic live check'}
             onClick={handleToggle}
-            disabled={aiConfigured !== true}
+            disabled={aiConfigured !== true && !liveEnabled}
             title={
               aiConfigured === true
                 ? 'Automatically check after you stop drawing'
