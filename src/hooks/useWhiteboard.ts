@@ -32,13 +32,20 @@ export interface UseWhiteboardReturn {
 }
 
 /**
+ * Stable empty state. Must be a module-level constant: if it were the default
+ * parameter object literal it would be a new reference on every render, which
+ * (a) re-runs the load effect forever and (b) causes an infinite render loop.
+ */
+const EMPTY_STATE: WhiteboardState = { elements: [] };
+
+/**
  * Custom hook for managing Excalidraw whiteboard state with localStorage persistence.
  * Handles loading, saving, debouncing, and error recovery.
  */
 export function useWhiteboard(options: UseWhiteboardOptions): UseWhiteboardReturn {
   const {
     storageKey,
-    initialState = { elements: [] },
+    initialState = EMPTY_STATE,
     onSaveError,
     onLoadError,
     autoSave = true,
@@ -98,13 +105,6 @@ export function useWhiteboard(options: UseWhiteboardOptions): UseWhiteboardRetur
 
     loadState();
 
-    // Also update liveElements when initialData changes (e.g., after load)
-    useEffect(() => {
-      if (initialData) {
-        setLiveElements(initialData.elements);
-      }
-    }, [initialData]);
-
     return () => {
       cancelled = true;
       isMountedRef.current = false;
@@ -113,6 +113,15 @@ export function useWhiteboard(options: UseWhiteboardOptions): UseWhiteboardRetur
       }
     };
   }, [storageKey, initialState, onLoadError]);
+
+  // Sync liveElements with the loaded scene.
+  // NOTE: this must be a sibling effect, never nested inside the effect above —
+  // calling a hook inside another effect throws "Invalid hook call" and blanks the app.
+  useEffect(() => {
+    if (initialData) {
+      setLiveElements(initialData.elements);
+    }
+  }, [initialData]);
 
   // Debounced save to localStorage
   const flushSave = useCallback(() => {
@@ -172,10 +181,9 @@ export function useWhiteboard(options: UseWhiteboardOptions): UseWhiteboardRetur
     }
     pendingSaveRef.current = null;
 
-    const emptyState: WhiteboardState = { elements: [] };
-    setInitialData(emptyState);
+    setInitialData(EMPTY_STATE);
     setLiveElements([]);
-    
+
     try {
       localStorage.removeItem(storageKey);
       setSaveError(null);
@@ -197,7 +205,7 @@ export function useWhiteboard(options: UseWhiteboardOptions): UseWhiteboardRetur
     if (!data || !Array.isArray(data.elements)) {
       throw new Error('Invalid whiteboard data: missing elements array');
     }
-    
+
     const stateToSave: WhiteboardState = {
       elements: data.elements,
       appState: data.appState || {},
@@ -206,7 +214,7 @@ export function useWhiteboard(options: UseWhiteboardOptions): UseWhiteboardRetur
 
     setInitialData(stateToSave);
     setLiveElements(data.elements);
-    
+
     if (autoSave) {
       try {
         localStorage.setItem(storageKey, JSON.stringify(stateToSave));

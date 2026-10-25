@@ -1,10 +1,16 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
 import katex from 'katex';
 import { QuestionPanel } from './components/QuestionPanel';
 import { Whiteboard } from './components/Whiteboard';
 import { HandwritingCheck, HandwritingResult } from './components/HandwritingCheck';
-import { AddQuestionModal } from './components/AddQuestionModal';
-import { SAMPLE_QUESTIONS } from './data/sampleQuestions';
+import { AiSettingsModal } from './components/AiSettingsModal';
+import { BulkAddModal } from './components/BulkAddModal';
+import { FeedbackCorner } from './components/FeedbackCorner';
+import { Dashboard } from './components/Dashboard';
+import { QuestionCard } from './components/QuestionCard';
+import { recordAttempt } from './lib/attempts';
+import { SAMPLE_QUESTIONS, type Question } from './data/sampleQuestions';
+import { AiFeedbackProvider } from './context/AiFeedbackContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { ToastProvider, useToast } from './context/ToastContext';
 import { useHealth } from './hooks/useHealth';
@@ -134,371 +140,39 @@ const PlusIcon: React.FC<{ size?: number; strokeWidth?: number }> = ({ size = 20
   </svg>
 );
 
-const QuestionCard: React.FC<{ 
-  question: any; 
-  currentIndex: number; 
-  totalQuestions: number; 
-  onNext: () => void; 
-  onPrev: () => void;
-}> = ({ question, currentIndex, totalQuestions, onNext, onPrev }) => {
-  const [showHints, setShowHints] = useState(false);
-  const [hintIndex, setHintIndex] = useState(0);
-  const [showSolution, setShowSolution] = useState(false);
-
-  const renderMath = (latex: string) => {
-    try {
-      return { __html: katex.renderToString(latex, { throwOnError: false }) };
-    } catch {
-      return { __html: latex };
-    }
-  };
-
-  const getDifficultyClass = (difficulty: string): string => {
-    if (difficulty === 'easy') return 'badge--easy';
-    if (difficulty === 'medium') return 'badge--medium';
-    if (difficulty === 'hard') return 'badge--hard';
-    return 'badge--easy';
-  };
-
-  const showQuestionLatex = question.question_latex != null;
-  const showAnswerLatex = question.answer_latex != null;
-
-  return (
-    <div style={{
-      position: 'fixed',
-      top: '70px',
-      left: '50%',
-      transform: 'translateX(-50%)',
-      zIndex: 50,
-      width: 'min(90vw, 600px)',
-      background: 'var(--bg-primary)',
-      border: '1px solid var(--border-primary)',
-      borderRadius: 'var(--radius-lg)',
-      boxShadow: 'var(--shadow-lg)',
-      padding: '1rem',
-      pointerEvents: 'none',
-      maxHeight: '80vh',
-      overflowY: 'auto',
-    }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
-        <div style={{ flex: 1 }}>
-          <p style={{ margin: '0 0 0.25rem', fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-            {question.topic}
-          </p>
-          <p style={{ margin: 0, fontWeight: 500, fontSize: '1rem', lineHeight: 1.4 }}>{question.question_text}</p>
-          {showQuestionLatex && (
-            <div className="latex-content" style={{ marginTop: '0.5rem', fontSize: '0.9rem' }}>
-              {question.question_latex}
-            </div>
-          )}
-        </div>
-        <div style={{ display: 'flex', gap: '0.25rem', pointerEvents: 'auto' }}>
-          <button 
-            className="btn btn--ghost"
-            onClick={onPrev}
-            disabled={currentIndex === 0}
-            title="Previous question"
-          >
-            <ChevronLeftIcon size={18} />
-          </button>
-          <span style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-            {currentIndex + 1} / {totalQuestions}
-          </span>
-          <button 
-            className="btn btn--ghost"
-            onClick={onNext}
-            disabled={currentIndex === SAMPLE_QUESTIONS.length - 1}
-            title="Next question"
-          >
-            <ChevronRightIcon size={18} />
-          </button>
-        </div>
-      </div>
-
-      <hr style={{ margin: '0.75rem 0', border: 'none', borderTop: '1px solid var(--border-secondary)' }} />
-
-      <div className="hints-section" style={{ pointerEvents: 'auto' }}>
-        {!showHints ? (
-          <button className="btn" style={{ width: '100%' }} onClick={() => { setShowHints(true); setHintIndex(0); }}>
-            Show Hint
-          </button>
-        ) : (
-          <div>
-            <h4 style={{ margin: '0 0 0.5rem', fontSize: '0.875rem' }}>
-              Hints ({hintIndex + 1} / {question.hints.length})
-            </h4>
-            <p style={{ margin: '0 0 0.75rem', lineHeight: 1.6 }}>{question.hints[hintIndex]}</p>
-            {hintIndex < question.hints.length - 1 && (
-              <button
-                className="btn btn--secondary"
-                style={{ width: '100%' }}
-                onClick={() => setHintIndex(hintIndex + 1)}
-              >
-                Next Hint
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-
-      <hr style={{ margin: '0.75rem 0', border: 'none', borderTop: '1px solid var(--border-secondary)' }} />
-
-      <div className="solution-section" style={{ pointerEvents: 'auto' }}>
-        <button
-          className="btn btn--secondary"
-          style={{ width: '100%' }}
-          onClick={() => setShowSolution(!showSolution)}
-        >
-          {showSolution ? 'Hide Solution' : 'Show Solution'}
-        </button>
-
-        {showSolution && (
-          <div style={{ marginTop: '0.75rem' }}>
-            <h4 style={{ margin: '0 0 0.5rem', fontSize: '0.875rem' }}>Answer:</h4>
-            {showAnswerLatex && (
-              <div className="latex-content" dangerouslySetInnerHTML={renderMath(question.answer_latex)} />
-            )}
-            <h4 style={{ margin: '1rem 0 0.5rem', fontSize: '0.875rem' }}>Steps:</h4>
-            <ol style={{ paddingLeft: '1.25rem', margin: 0, lineHeight: 1.8 }}>
-              {question.solution_steps.map((step: string, idx: number) => (
-                <li key={idx} style={{ marginBottom: '0.375rem' }}>
-                  <span dangerouslySetInnerHTML={renderMath(step)} />
-                </li>
-              ))}
-            </ol>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-const Dashboard: React.FC = () => {
-  const { showToast } = useToast();
-  const [attempts, setAttempts] = useState<Attempt[]>([]);
-  const [weakTopics, setWeakTopics] = useState<WeakTopic[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    
-    const loadData = async () => {
-      try {
-        setIsLoading(true);
-        const response = await fetch('http://127.0.0.1:8000/questions');
-        if (!response.ok) throw new Error('Failed to load questions');
-        const questions = await response.json();
-        
-        const allAttempts: Attempt[] = [];
-        for (const q of questions) {
-          try {
-            const attemptResponse = await fetch(`http://127.0.0.1:8000/attempts/${q.id}`);
-            if (attemptResponse.ok) {
-              const data = await attemptResponse.json();
-              if (data.length > 0) {
-                allAttempts.push(...data.map((a: any) => ({ ...a, question: q })));
-              }
-            }
-          } catch (e) {
-            console.warn(`Failed to load attempts for ${q.id}:`, e);
-          }
-        }
-        
-        if (!cancelled) {
-          setAttempts(allAttempts);
-          setError(null);
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setError('Failed to load dashboard data');
-          showToast('Failed to load dashboard data', 'error');
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    loadData();
-    return () => { cancelled = true; };
-  }, [showToast]);
-
-  useEffect(() => {
-    if (attempts.length > 0) {
-      const topicStats: Record<string, { correct: number; total: number }> = {};
-      attempts.forEach((a) => {
-        const topic = a.question?.topic || 'Unknown';
-        if (!topicStats[topic]) topicStats[topic] = { correct: 0, total: 0 };
-        topicStats[topic].total++;
-        if (a.is_correct) topicStats[topic].correct++;
-      });
-      
-      const weak = Object.entries(topicStats)
-        .map(([topic, stats]) => ({
-          topic,
-          accuracy: stats.total > 0 ? stats.correct / stats.total : 0,
-          attempts: stats.total
-        }))
-        .filter(w => w.accuracy < 0.7 && w.attempts > 0)
-        .sort((a, b) => a.accuracy - b.accuracy);
-      
-      setWeakTopics(weak);
-    }
-  }, [attempts]);
-
-  if (isLoading) {
-    return (
-      <div style={{ padding: '2rem', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
-        <div style={{ width: '32px', height: '32px', border: '3px solid var(--border-primary)', borderTopColor: 'var(--accent-primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-        <p style={{ marginTop: '1rem', color: 'var(--text-secondary)' }}>Loading dashboard...</p>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div style={{ padding: '2rem', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
-        <ErrorIcon size={48} strokeWidth={1.5} />
-        <p style={{ color: 'var(--error)', margin: '1rem 0 0' }}>{error}</p>
-        <button className="btn btn--primary" onClick={() => window.location.reload()}>Retry</button>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ padding: '1.5rem', height: '100%', overflow: 'auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-        <h2 style={{ margin: 0, fontSize: '1.5rem' }}>Dashboard</h2>
-      </div>
-
-      <section style={{ marginBottom: '2rem' }}>
-        <h3 style={{ margin: '0 0 1rem', fontSize: '1rem' }}>Weak Topics</h3>
-        {weakTopics.length === 0 ? (
-          <div style={{ 
-            padding: '2rem', 
-            textAlign: 'center', 
-            background: 'var(--bg-tertiary)', 
-            borderRadius: 'var(--radius-md)',
-            border: '1px solid var(--border-secondary)',
-          }}>
-            <BarChartIcon size={48} strokeWidth={1.5} />
-            <p style={{ margin: '1rem 0 0', color: 'var(--text-secondary)' }}>No weak topics identified yet.</p>
-            <p style={{ margin: '0.5rem 0 0', fontSize: '0.875rem', color: 'var(--text-muted)' }}>Practice more questions to see analysis.</p>
-          </div>
-        ) : (
-          <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            {weakTopics.map((w, i) => (
-              <li key={i} style={{ 
-                padding: '1rem', 
-                background: 'var(--warning-bg)', 
-                borderRadius: 'var(--radius-md)',
-                border: '1px solid var(--warning)',
-                borderLeft: '4px solid var(--warning)',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-              }}>
-                <div>
-                  <strong>{w.topic}</strong>
-                  <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
-                    Accuracy: {(w.accuracy * 100).toFixed(0)}% ({w.attempts} attempts)
-                  </div>
-                </div>
-                <div style={{ 
-                  width: '60px', 
-                  height: '6px', 
-                  background: 'var(--bg-primary)', 
-                  borderRadius: '3px', 
-                  overflow: 'hidden' 
-                }}>
-                  <div style={{ 
-                    width: `${w.accuracy * 100}%`, 
-                    height: '100%', 
-                    background: w.accuracy > 0.5 ? 'var(--success)' : w.accuracy > 0.3 ? 'var(--warning)' : 'var(--error)',
-                    borderRadius: '3px',
-                    transition: 'width 0.3s ease'
-                  }} />
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section>
-        <h3 style={{ margin: '0 0 1rem', fontSize: '1rem' }}>Recent Attempts</h3>
-        {attempts.length === 0 ? (
-          <div style={{ 
-            padding: '2rem', 
-            textAlign: 'center', 
-            background: 'var(--bg-tertiary)', 
-            borderRadius: 'var(--radius-md)',
-            border: '1px solid var(--border-secondary)',
-          }}>
-            <ClipboardIcon size={48} strokeWidth={1.5} />
-            <p style={{ margin: '1rem 0 0', color: 'var(--text-secondary)' }}>No attempts recorded yet.</p>
-            <p style={{ margin: '0.5rem 0 0', fontSize: '0.875rem', color: 'var(--text-muted)' }}>Practice questions to see your history.</p>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            {attempts.slice(0, 20).map((a, i) => (
-              <div key={i} style={{ 
-                padding: '0.875rem 1rem', 
-                background: a.is_correct ? 'var(--success-bg)' : 'var(--error-bg)',
-                borderRadius: 'var(--radius-md)',
-                border: `1px solid ${a.is_correct ? 'var(--success)' : 'var(--error)'}`,
-                borderLeft: `4px solid ${a.is_correct ? 'var(--success)' : 'var(--error)'}`,
-                transition: 'transform var(--transition-fast)',
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem' }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 500, marginBottom: '0.25rem' }}>
-                      {a.question?.topic}
-                    </div>
-                    <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {a.question?.question_text?.substring(0, 80)}...
-                    </div>
-                  </div>
-                  <div style={{ 
-                    display: 'flex', 
-                    flexDirection: 'column', 
-                    alignItems: 'flex-end', 
-                    gap: '0.25rem',
-                    flexShrink: 0 
-                  }}>
-                    <span style={{ 
-                      fontSize: '0.75rem', 
-                      fontWeight: 600,
-                      color: a.is_correct ? 'var(--success)' : 'var(--error)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.25rem',
-                    }}>
-                      {a.is_correct ? <CheckIcon /> : <XIcon />}
-                      {a.is_correct ? 'Correct' : 'Incorrect'}
-                    </span>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      {new Date(a.created_at).toLocaleString()}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-    </div>
-  );
-};
-
 const AppContent: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
-  const { health, loading: healthLoading } = useHealth();
+  const { health, loading: healthLoading, refetch: refetchHealth } = useHealth();
+  const { showToast } = useToast();
+  const [questions, setQuestions] = useState<Question[]>(() => {
+    try {
+      const saved = localStorage.getItem('math-tutor-questions');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed as Question[];
+      }
+    } catch {
+      /* corrupt storage: fall back to the sample set */
+    }
+    return SAMPLE_QUESTIONS;
+  });
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [bulkAddOpen, setBulkAddOpen] = useState(false);
+  const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('practice');
   const [handwritingResult, setHandwritingResult] = useState<HandwritingResult | null>(null);
+
+  // Never index out of range after adding questions or trimming the list.
+  const safeIndex = Math.min(currentQuestionIndex, Math.max(questions.length - 1, 0));
+  const currentQuestion = questions[safeIndex] ?? SAMPLE_QUESTIONS[0];
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('math-tutor-questions', JSON.stringify(questions));
+    } catch {
+      /* storage full or blocked */
+    }
+  }, [questions]);
   
   // Floating panel states - persisted in localStorage
   const [questionPanelOpen, setQuestionPanelOpen] = useState(() => {
@@ -510,7 +184,23 @@ const AppContent: React.FC = () => {
     return saved !== null ? JSON.parse(saved) : viewMode === 'handwriting';
   });
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [addQuestionOpen, setAddQuestionOpen] = useState(false);
+  const [ribbonCollapsed, setRibbonCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('math-tutor-ribbon-collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  // Collapsing the ribbon gives the canvas the space back (the card uses --header-height).
+  useEffect(() => {
+    document.documentElement.style.setProperty('--header-height', ribbonCollapsed ? '26px' : '48px');
+    try {
+      localStorage.setItem('math-tutor-ribbon-collapsed', String(ribbonCollapsed));
+    } catch {
+      /* ignore */
+    }
+  }, [ribbonCollapsed]);
   
   // Refs for fullscreen
   const boardRef = useRef<HTMLDivElement>(null);
@@ -524,8 +214,8 @@ const AppContent: React.FC = () => {
   }, [handwritingStripOpen]);
 
   const handleNext = useCallback(() => {
-    setCurrentQuestionIndex((prev) => Math.min(prev + 1, SAMPLE_QUESTIONS.length - 1));
-  }, []);
+    setCurrentQuestionIndex((prev) => Math.min(prev + 1, questions.length - 1));
+  }, [questions.length]);
 
   const handlePrev = useCallback(() => {
     setCurrentQuestionIndex((prev) => Math.max(prev - 1, 0));
@@ -555,6 +245,16 @@ const AppContent: React.FC = () => {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      const typing =
+        !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+      if (typing) return;
+
+      if (e.key === 'q' || e.key === 'Q') {
+        e.preventDefault();
+        setQuestionPanelOpen((open) => !open);
+        return;
+      }
       if (e.key === 'f' || e.key === 'F') {
         e.preventDefault();
         toggleFullscreen();
@@ -567,13 +267,12 @@ const AppContent: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [toggleFullscreen]);
 
-  const handleAddQuestion = useCallback((newQuestion: any) => {
-    // Add the new question to the sample questions (for demo purposes)
-    // In a real app, this would be handled by the backend
-    setCurrentQuestionIndex(SAMPLE_QUESTIONS.length);
-    // Note: In a real app, you'd update a questions state or refetch from backend
-    // For now, we just show a toast
-  }, []);
+  const handleAddQuestions = useCallback((added: Question[]) => {
+    if (!added.length) return;
+    const firstNew = questions.length;
+    setQuestions((prev) => [...prev, ...added]);
+    setCurrentQuestionIndex(firstNew);
+  }, [questions.length]);
 
   return (
     <div className="app-container" style={{ position: 'relative', height: '100vh', width: '100vw' }}>
@@ -591,41 +290,70 @@ const AppContent: React.FC = () => {
         {viewMode === 'practice' && <Whiteboard />}
         {viewMode === 'handwriting' && (
           <HandwritingCheck
-            questionId={SAMPLE_QUESTIONS[currentQuestionIndex].id}
+            questionId={currentQuestion.id}
             onCheckComplete={handleHandwritingComplete}
           />
         )}
-        {viewMode === 'dashboard' && <Dashboard />}
+        {viewMode === 'dashboard' && (
+          <Dashboard
+            questions={questions}
+            onOpenQuestion={(id) => {
+              const idx = questions.findIndex((q) => q.id === id);
+              if (idx >= 0) {
+                setCurrentQuestionIndex(idx);
+                setViewMode('practice');
+              }
+            }}
+          />
+        )}
       </div>
 
       {/* Floating Question Card - Top center */}
-      {questionPanelOpen && viewMode !== 'dashboard' && (
+      {viewMode !== 'dashboard' && (
         <QuestionCard
-          question={SAMPLE_QUESTIONS[currentQuestionIndex]}
-          currentIndex={currentQuestionIndex}
-          totalQuestions={SAMPLE_QUESTIONS.length}
+          question={currentQuestion}
+          index={safeIndex}
+          total={questions.length}
+          collapsed={!questionPanelOpen}
+          onToggle={() => setQuestionPanelOpen((open) => !open)}
           onNext={handleNext}
           onPrev={handlePrev}
+          onResult={(correct) => {
+            recordAttempt(currentQuestion, correct);
+            showToast(correct ? 'Recorded: got it' : 'Recorded: struggled', correct ? 'success' : 'warning');
+          }}
         />
       )}
 
-      {/* Floating Question Panel Toggle - Left side */}
+      {/* Show / hide the question drawer — right middle edge */}
       <button
-        className={`btn ${questionPanelOpen ? 'btn--primary' : 'btn--ghost'}`}
-        onClick={() => setQuestionPanelOpen(!questionPanelOpen)}
+        onClick={() => setQuestionPanelOpen((open) => !open)}
+        title={questionPanelOpen ? 'Close question (Q)' : 'Open question (Q)'}
+        aria-label={questionPanelOpen ? 'Close question' : 'Open question'}
         style={{
           position: 'fixed',
-          left: '12px',
-          top: 'calc(var(--header-height) + 12px)',
-          zIndex: 40,
-          borderRadius: 'var(--radius-md)',
+          right: 0,
+          top: '50%',
+          transform: 'translateY(-50%)',
+          zIndex: 60,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '0.25rem',
+          padding: '0.625rem 0.4375rem',
+          border: '1px solid var(--border-primary)',
+          borderRight: 'none',
+          borderRadius: 'var(--radius-md) 0 0 var(--radius-md)',
+          background: questionPanelOpen ? 'var(--accent-primary)' : 'var(--bg-secondary)',
+          color: questionPanelOpen ? '#fff' : 'var(--text-secondary)',
           boxShadow: 'var(--shadow-md)',
-          padding: '0.5rem',
+          cursor: 'pointer',
         }}
-        aria-label={questionPanelOpen ? 'Hide question panel' : 'Show question panel'}
-        title={questionPanelOpen ? 'Hide question (Q)' : 'Show question (Q)'}
       >
-        <ChevronRightIcon size={20} />
+        {questionPanelOpen ? <ChevronRightIcon size={18} /> : <ChevronLeftIcon size={18} />}
+        <span style={{ fontSize: '0.625rem', writingMode: 'vertical-rl', letterSpacing: '0.06em' }}>
+          {questionPanelOpen ? 'HIDE' : 'SHOW'}
+        </span>
       </button>
 
       {/* Floating Handwriting Strip Toggle - Bottom */}
@@ -655,7 +383,7 @@ const AppContent: React.FC = () => {
       )}
 
       {/* Top Header Bar */}
-      <header className="app-header" style={{ zIndex: 30 }}>
+      <header className="app-header" style={{ zIndex: 30, display: ribbonCollapsed ? 'none' : 'flex' }}>
         <div className="app-header__nav">
           <button 
             className={`btn ${viewMode === 'practice' ? 'btn--active' : 'btn--ghost'}`}
@@ -699,6 +427,22 @@ const AppContent: React.FC = () => {
               {health.ai_configured ? `AI: ${health.provider} (${health.model})` : 'AI: Mock (offline)'}
             </span>
           )}
+
+          <button
+            className="btn btn--ghost"
+            onClick={() => setAiSettingsOpen(true)}
+            aria-label="AI model settings"
+            title="AI model settings"
+          >
+            <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
+              <line x1="4" y1="7" x2="20" y2="7" />
+              <line x1="4" y1="12" x2="20" y2="12" />
+              <line x1="4" y1="17" x2="20" y2="17" />
+              <circle cx="9" cy="7" r="2" fill="var(--bg-secondary)" />
+              <circle cx="15" cy="12" r="2" fill="var(--bg-secondary)" />
+              <circle cx="8" cy="17" r="2" fill="var(--bg-secondary)" />
+            </svg>
+          </button>
           
           <button 
             className="btn btn--ghost"
@@ -717,10 +461,19 @@ const AppContent: React.FC = () => {
           >
             <FullscreenIcon />
           </button>
+
+          <button
+            className="btn btn--ghost"
+            onClick={() => setRibbonCollapsed(true)}
+            aria-label="Hide toolbar"
+            title="Hide toolbar — more drawing space"
+          >
+            <ChevronUpIcon size={18} />
+          </button>
           
           <button 
             className="btn btn--primary"
-            onClick={() => setAddQuestionOpen(true)}
+            onClick={() => setBulkAddOpen(true)}
             aria-label="Add Question"
             title="Add Question"
           >
@@ -728,6 +481,35 @@ const AppContent: React.FC = () => {
           </button>
         </div>
       </header>
+
+      {ribbonCollapsed && (
+        <button
+          onClick={() => setRibbonCollapsed(false)}
+          title="Show toolbar"
+          aria-label="Show toolbar"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 60,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.25rem',
+            padding: '0.125rem 0.75rem',
+            border: '1px solid var(--border-primary)',
+            borderTop: 'none',
+            borderRadius: '0 0 var(--radius-md) var(--radius-md)',
+            background: 'var(--bg-secondary)',
+            color: 'var(--text-secondary)',
+            cursor: 'pointer',
+            fontSize: '0.6875rem',
+          }}
+        >
+          <ChevronDownIcon size={14} />
+          toolbar
+        </button>
+      )}
 
       {/* Floating Handwriting Analysis Strip - Bottom */}
       {handwritingStripOpen && viewMode === 'handwriting' && (
@@ -744,11 +526,26 @@ const AppContent: React.FC = () => {
           overflow: 'hidden',
         }}>
           <HandwritingCheck
-            questionId={SAMPLE_QUESTIONS[currentQuestionIndex].id}
+            questionId={currentQuestion.id}
             onCheckComplete={handleHandwritingComplete}
           />
         </div>
       )}
+
+      {/* Add questions (bulk, plain text or JSON) */}
+      <BulkAddModal
+        isOpen={bulkAddOpen}
+        onClose={() => setBulkAddOpen(false)}
+        onAdd={handleAddQuestions}
+      />
+
+      <FeedbackCorner />
+
+      <AiSettingsModal
+        isOpen={aiSettingsOpen}
+        onClose={() => setAiSettingsOpen(false)}
+        onSaved={() => refetchHealth()}
+      />
 
       {/* Fullscreen hint */}
       {!isFullscreen && (
@@ -789,7 +586,9 @@ export const App: React.FC = () => {
   return (
     <ThemeProvider>
       <ToastProvider>
-        <AppContent />
+        <AiFeedbackProvider>
+          <AppContent />
+        </AiFeedbackProvider>
       </ToastProvider>
     </ThemeProvider>
   );

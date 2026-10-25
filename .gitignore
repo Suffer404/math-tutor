@@ -55,3 +55,5 @@ cache/ai_responses/
 # Temporary files
 *.tmp
 *.temp
+# runtime AI settings (contains an API key)
+ai_config.json

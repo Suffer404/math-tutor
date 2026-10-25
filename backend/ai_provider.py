@@ -26,6 +26,34 @@ import httpx
 CACHE_DIR = Path("cache/ai_responses")
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
+# Runtime AI configuration written by the Settings dialog (overrides .env).
+# Kept outside git: ai_config.json is gitignored.
+AI_CONFIG_PATH = Path(__file__).resolve().parent.parent / "ai_config.json"
+
+
+def load_ai_config() -> Dict[str, Any]:
+    """Read ai_config.json; returns {} when absent or unreadable."""
+    try:
+        if AI_CONFIG_PATH.exists():
+            data = json.loads(AI_CONFIG_PATH.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
+    except Exception:
+        pass
+    return {}
+
+
+def save_ai_config(cfg: Dict[str, Any]) -> None:
+    AI_CONFIG_PATH.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+
+
+def mask_key(key: Optional[str]) -> str:
+    if not key:
+        return ""
+    if len(key) <= 12:
+        return key[:4] + "..."
+    return key[:10] + "..." + key[-4:]
+
+
 @dataclass
 class AIResponse:
     content: str
@@ -182,10 +210,17 @@ class OpenAIProvider(AIProvider):
                     tokens_used=0,
                     error="Invalid API key."
                 )
-            
+            if response.status_code == 402:
+                return AIResponse(
+                    content="",
+                    model=self.model,
+                    tokens_used=0,
+                    error="Requesty: account balance is too low. Top up at app.requesty.ai/settings/billing.",
+                )
+
             response.raise_for_status()
             data = response.json()
-            
+
             ai_response = AIResponse(
                 content=data["choices"][0]["message"]["content"],
                 model=self.model,
@@ -193,7 +228,7 @@ class OpenAIProvider(AIProvider):
             )
             self._save_cache(cache_key, ai_response)
             return ai_response
-            
+
         except httpx.TimeoutException:
             return AIResponse(content="", model=self.model, tokens_used=0, error="Request timeout")
         except Exception as e:
@@ -238,11 +273,13 @@ class OpenAIProvider(AIProvider):
 class RequestyProvider(AIProvider):
     """Requesty AI Router provider (OpenAI-compatible API)."""
     
-    def __init__(self, api_key: str, model: str = "openai/gpt-4o-mini"):
+    def __init__(self, api_key: str, model: str = None, base_url: str = None):
         self.api_key = api_key
-        self.model = model
+        # model and base_url can come from the Settings dialog, then env
+        self.model = model or os.getenv("REQUESTY_MODEL") or "openai/gpt-4o-mini"
+        self.base_url = (base_url or os.getenv("REQUESTY_BASE_URL") or "https://router.requesty.ai/v1").rstrip("/")
         self.client = httpx.AsyncClient(
-            base_url="https://router.requesty.ai/v1",
+            base_url=self.base_url,
             headers={"Authorization": f"Bearer {api_key}"},
             timeout=60.0
         )
@@ -309,6 +346,14 @@ class RequestyProvider(AIProvider):
                     error="Invalid API key."
                 )
             
+            if response.status_code == 402:
+                return AIResponse(
+                    content="",
+                    model=self.model,
+                    tokens_used=0,
+                    error="Requesty: account balance is too low. Top up at app.requesty.ai/settings/billing.",
+                )
+            
             response.raise_for_status()
             data = response.json()
             
@@ -333,7 +378,7 @@ class RequestyProvider(AIProvider):
             
         try:
             response = await self.client.post("/chat/completions", json={
-                "model": "openai/gpt-4o-mini",
+                "model": self.model,
                 "messages": [{
                     "role": "user",
                     "content": [
@@ -346,20 +391,27 @@ class RequestyProvider(AIProvider):
             })
             
             if response.status_code == 429:
-                return AIResponse(content="", model="openai/gpt-4o-mini", tokens_used=0, error="Rate limit exceeded")
+                return AIResponse(content="", model=self.model, tokens_used=0, error="Rate limit exceeded")
+            if response.status_code == 402:
+                return AIResponse(
+                    content="",
+                    model=self.model,
+                    tokens_used=0,
+                    error="Requesty: account balance is too low. Top up at app.requesty.ai/settings/billing.",
+                )
             response.raise_for_status()
             
             data = response.json()
             ai_response = AIResponse(
                 content=data["choices"][0]["message"]["content"],
-                model="openai/gpt-4o-mini",
+                model=self.model,
                 tokens_used=data.get("usage", {}).get("total_tokens", 0)
             )
             self._save_cache(cache_key, ai_response)
             return ai_response
             
         except Exception as e:
-            return AIResponse(content="", model="openai/gpt-4o-mini", tokens_used=0, error=str(e))
+            return AIResponse(content="", model=self.model, tokens_used=0, error=str(e))
 
 class AnthropicProvider(AIProvider):
     """Anthropic Claude API provider."""
@@ -427,29 +479,36 @@ class AnthropicProvider(AIProvider):
             return AIResponse(content="", model="claude-3-haiku", tokens_used=0, error=str(e))
 
 def get_provider() -> AIProvider:
-    """Factory to get configured AI provider."""
-    provider_type = os.getenv("AI_PROVIDER", "mock").lower()
-    
+    """Build the provider from ai_config.json (Settings dialog), else from .env."""
+    cfg = load_ai_config()
+    provider_type = str(cfg.get("provider") or os.getenv("AI_PROVIDER", "mock")).lower()
+
+    # any OpenAI-compatible endpoint: requesty, openrouter, groq, ollama, ...
+    if provider_type in ("requesty", "custom", "openai-compatible", "compatible"):
+        api_key = cfg.get("api_key") or os.getenv("REQUESTY_API_KEY")
+        if not api_key:
+            print("Warning: no API key configured, falling back to mock")
+            return MockProvider()
+        base_url = cfg.get("base_url") or os.getenv("REQUESTY_BASE_URL") or "https://router.requesty.ai/v1"
+        model = cfg.get("model") or os.getenv("REQUESTY_MODEL") or "openai/gpt-4o-mini"
+        return RequestyProvider(api_key, model, base_url)
+
     if provider_type == "openai":
-        api_key = os.getenv("OPENAI_API_KEY")
+        api_key = cfg.get("api_key") or os.getenv("OPENAI_API_KEY")
         if not api_key:
             print("Warning: OPENAI_API_KEY not set, falling back to mock")
             return MockProvider()
-        return OpenAIProvider(api_key)
-    elif provider_type == "anthropic":
-        api_key = os.getenv("ANTHROPIC_API_KEY")
+        return OpenAIProvider(api_key, cfg.get("model") or "gpt-4o-mini")
+
+    if provider_type == "anthropic":
+        api_key = cfg.get("api_key") or os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
             print("Warning: ANTHROPIC_API_KEY not set, falling back to mock")
             return MockProvider()
-        return AnthropicProvider(api_key)
-    elif provider_type == "requesty":
-        api_key = os.getenv("REQUESTY_API_KEY")
-        if not api_key:
-            print("Warning: REQUESTY_API_KEY not set, falling back to mock")
-            return MockProvider()
-        return RequestyProvider(api_key)
-    else:
-        return MockProvider()
+        return AnthropicProvider(api_key, cfg.get("model") or "claude-3-haiku-20240307")
+
+    return MockProvider()
+
 
 # Sync wrapper for easier use in non-async contexts
 class SyncAIProvider:

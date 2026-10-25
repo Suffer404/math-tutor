@@ -3,6 +3,7 @@ import { Excalidraw } from '@excalidraw/excalidraw';
 import { useWhiteboard } from '../hooks/useWhiteboard';
 import { ConfirmDialog } from './ConfirmDialog';
 import { useToast } from '../context/ToastContext';
+import { useAiFeedback } from '../context/AiFeedbackContext';
 
 interface HandwritingCheckProps {
   questionId: string;
@@ -34,6 +35,7 @@ export const HandwritingCheck: React.FC<HandwritingCheckProps> = ({
   onCheckComplete 
 }) => {
   const { showToast } = useToast();
+  const { push: pushAi, setBusy: setAiBusy } = useAiFeedback();
   
   const {
     initialData,
@@ -116,14 +118,20 @@ export const HandwritingCheck: React.FC<HandwritingCheckProps> = ({
     }
     
     setIsAnalyzing(true);
-    
+    setAiBusy(true);
+    pushAi('working', `Analyzing question ${questionId} — capturing the board…`);
+
     try {
       const imageBase64 = await captureCanvas();
+      pushAi('info', imageBase64
+        ? `Board captured (${Math.round((imageBase64.length * 3) / 4 / 1024)} KB)`
+        : 'Board capture came back empty');
       
       if (!imageBase64) {
         throw new Error('Could not capture whiteboard image. Make sure you have drawn something.');
       }
 
+      pushAi('working', 'Sending to the vision model…');
       const response = await fetch(`${API_BASE}/ai/handwriting-check`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -135,6 +143,12 @@ export const HandwritingCheck: React.FC<HandwritingCheckProps> = ({
       }
 
       const result: HandwritingResult = await response.json();
+      pushAi('ok', `Model replied: ${result.recognized_steps.length} step(s), confidence ${Math.round((result.confidence || 0) * 100)}%`);
+      if (result.first_error_step) {
+        pushAi('error', `First error at step ${result.first_error_step}: ${result.error_explanation ?? 'see feedback'}`);
+      } else if (result.error_explanation) {
+        pushAi('warn', result.error_explanation);
+      }
       setAnalysisResult(result);
       
       // Convert recognized steps to our internal format
@@ -154,6 +168,7 @@ export const HandwritingCheck: React.FC<HandwritingCheckProps> = ({
       
     } catch (error) {
       console.error('Handwriting analysis error:', error);
+      pushAi('error', error instanceof Error ? error.message : 'Analysis failed');
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       
       // Check if it's an AI configuration error
@@ -176,6 +191,7 @@ export const HandwritingCheck: React.FC<HandwritingCheckProps> = ({
       showToast(`Analysis failed: ${errorMessage}`, 'error');
     } finally {
       setIsAnalyzing(false);
+      setAiBusy(false);
     }
   }, [captureCanvas, questionId, showToast, aiConfigured]);
 

@@ -33,8 +33,8 @@ describe('App & Question Navigation', () => {
 
   it('renders initial question and whiteboard', () => {
     render(<App />);
-    // Question card now shows topic "Derivatives" instead of course "Calculus I"
-    expect(screen.getByText('Derivatives')).toBeDefined();
+    // Question card now shows topic "Derivatives · easy" instead of course "Calculus I"
+    expect(screen.getByText(/Derivatives/)).toBeDefined();
     expect(screen.getByText(SAMPLE_QUESTIONS[0].question_text)).toBeDefined();
     expect(screen.getByTestId('excalidraw-mock')).toBeDefined();
   });

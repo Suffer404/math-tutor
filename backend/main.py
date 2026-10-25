@@ -112,18 +112,25 @@ async def health_check():
     from .ai_provider import get_provider
     provider = get_provider()
     provider_type = os.getenv("AI_PROVIDER", "mock").lower()
-    model = "mock"
-    if provider_type == "openai":
-        model = "gpt-4o-mini"
-    elif provider_type == "anthropic":
-        model = "claude-3-haiku-20240307"
-    elif provider_type == "requesty":
-        model = "openai/gpt-4o-mini"
+
+    # which env var owns the key for each provider
+    key_vars = {
+        "openai": "OPENAI_API_KEY",
+        "anthropic": "ANTHROPIC_API_KEY",
+        "requesty": "REQUESTY_API_KEY",
+    }
+    models = {
+        "openai": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        "anthropic": os.getenv("ANTHROPIC_MODEL", "claude-3-haiku-20240307"),
+        "requesty": os.getenv("REQUESTY_MODEL", "openai/gpt-4o-mini"),
+    }
+
+    key_var = key_vars.get(provider_type)
     return {
         "status": "ok",
-        "ai_configured": provider_type != "mock" and bool(os.getenv("OPENAI_API_KEY") or os.getenv("ANTHROPIC_API_KEY") or os.getenv("REQUESTY_API_KEY")),
+        "ai_configured": bool(key_var and os.getenv(key_var)),
         "provider": provider_type,
-        "model": model,
+        "model": models.get(provider_type, "mock"),
     }
 
 @app.post("/attempts")
@@ -249,8 +256,10 @@ class AIGenerateResponse(BaseModel):
 @app.post("/ai/generate", response_model=AIGenerateResponse)
 async def ai_generate(req: AIGenerateRequest):
     provider = get_provider()
-    sync_provider = SyncAIProvider(provider)
-    response = sync_provider.generate_text(req.prompt, req.system_prompt)
+    # await the async provider: wrapping it in SyncAIProvider inside an async
+    # endpoint starts a second event loop and fails with
+    # "This event loop is already running".
+    response = await provider.generate_text(req.prompt, req.system_prompt)
     return AIGenerateResponse(**response.__dict__)
 
 class HandwritingCheckRequest(BaseModel):
@@ -269,8 +278,7 @@ class HandwritingCheckResponse(BaseModel):
 @app.post("/ai/handwriting-check", response_model=HandwritingCheckResponse)
 async def ai_handwriting_check(req: HandwritingCheckRequest):
     provider = get_provider()
-    sync_provider = SyncAIProvider(provider)
-    
+
     prompt = """Analyze the handwritten mathematical solution in the image. 
 Return a JSON object with:
 - recognized_steps: array of {step: int, latex: str, confidence: float}
@@ -283,7 +291,7 @@ Return a JSON object with:
 
 Focus on calculus/engineering math. Be honest about uncertainty."""
     
-    response = sync_provider.generate_vision(prompt, req.image_base64)
+    response = await provider.generate_vision(prompt, req.image_base64)
     
     if response.error:
         # Return structured error response
@@ -310,6 +318,107 @@ Focus on calculus/engineering math. Be honest about uncertainty."""
             confidence=0.0,
             needs_user_confirmation=True
         )
+
+# ---------------------------------------------------------------------------
+# AI settings: read/update the runtime provider without editing .env
+# ---------------------------------------------------------------------------
+class AIConfigRequest(BaseModel):
+    provider: str = "custom"
+    base_url: str
+    model: str
+    api_key: Optional[str] = None
+
+
+@app.get("/ai/config")
+async def get_ai_config():
+    from .ai_provider import load_ai_config, mask_key
+
+    cfg = load_ai_config()
+    key = cfg.get("api_key") or os.getenv("REQUESTY_API_KEY") or os.getenv("OPENAI_API_KEY") or ""
+    return {
+        "provider": cfg.get("provider") or os.getenv("AI_PROVIDER", "mock"),
+        "base_url": cfg.get("base_url") or os.getenv("REQUESTY_BASE_URL") or "https://router.requesty.ai/v1",
+        "model": cfg.get("model") or os.getenv("REQUESTY_MODEL") or "openai/gpt-4o-mini",
+        "api_key_masked": mask_key(key),
+        "has_key": bool(key),
+        "source": "config" if cfg else "env",
+    }
+
+
+@app.put("/ai/config")
+async def put_ai_config(req: AIConfigRequest):
+    from .ai_provider import load_ai_config, save_ai_config, mask_key
+
+    base_url = (req.base_url or "").strip().rstrip("/")
+    if not base_url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="Base URL must start with http:// or https://")
+    if not req.model.strip():
+        raise HTTPException(status_code=400, detail="Model name is required")
+
+    cfg = load_ai_config()
+    cfg["provider"] = (req.provider or "custom").strip().lower()
+    cfg["base_url"] = base_url
+    cfg["model"] = req.model.strip()
+    if req.api_key and req.api_key.strip():
+        cfg["api_key"] = req.api_key.strip()
+    if not cfg.get("api_key"):
+        # first save with no key in the request: inherit whatever .env already has,
+        # so changing only the model/URL does not force re-entering the key.
+        cfg["api_key"] = (
+            os.getenv("REQUESTY_API_KEY")
+            or os.getenv("OPENAI_API_KEY")
+            or os.getenv("ANTHROPIC_API_KEY")
+            or ""
+        )
+    if not cfg.get("api_key"):
+        raise HTTPException(status_code=400, detail="API key is required the first time you save")
+
+    save_ai_config(cfg)
+    return {
+        "provider": cfg["provider"],
+        "base_url": cfg["base_url"],
+        "model": cfg["model"],
+        "api_key_masked": mask_key(cfg["api_key"]),
+        "has_key": True,
+        "source": "config",
+    }
+
+
+@app.post("/ai/test")
+async def test_ai():
+    """One tiny round-trip so the user sees whether the key/url/model actually work."""
+    from .ai_provider import get_provider
+
+    provider = get_provider()
+    if provider.__class__.__name__ == "MockProvider":
+        raise HTTPException(status_code=400, detail="No provider configured (mock fallback is active)")
+    response = await provider.generate_text("Reply with the single word: PONG", "You are a connectivity test.")
+    if response.error:
+        return {"ok": False, "model": response.model, "error": response.error}
+    return {"ok": True, "model": response.model, "reply": (response.content or "").strip()[:80],
+            "tokens": response.tokens_used}
+
+
+@app.get("/ai/models")
+async def list_ai_models():
+    """Proxy {base_url}/models so the UI can offer a model picker."""
+    from .ai_provider import get_provider, RequestyProvider
+
+    provider = get_provider()
+    if not isinstance(provider, RequestyProvider):
+        raise HTTPException(status_code=400, detail="Model listing needs an OpenAI-compatible provider")
+
+    try:
+        r = await provider.client.get("/models", timeout=30.0)
+        if r.status_code != 200:
+            return {"ok": False, "error": f"HTTP {r.status_code}: {r.text[:160]}", "models": []}
+        data = r.json()
+        ids = [m.get("id") for m in data.get("data", []) if m.get("id")]
+        ids.sort()
+        return {"ok": True, "count": len(ids), "models": ids[:400]}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "models": []}
+
 
 if __name__ == "__main__":
     import uvicorn
